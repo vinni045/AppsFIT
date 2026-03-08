@@ -13,6 +13,12 @@ interface CompanyInfo {
   subsegment: string
 }
 
+interface Insight {
+  title: string
+  description: string
+  value?: string
+}
+
 const METRICS = [
   { key: 'Net Revenue', label: 'Revenue' },
   { key: 'Cost of Goods', label: 'Cost of Goods' },
@@ -68,6 +74,7 @@ function App() {
   const [chartData, setChartData] = useState<FinancialData[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [insights, setInsights] = useState<Insight[]>([])
 
   // Filter state
   const [selectedSegment, setSelectedSegment] = useState('All Segments')
@@ -155,6 +162,69 @@ function App() {
         setError('Failed to load comparison data')
         setLoading(false)
       })
+  }
+
+  const generateInsights = () => {
+    if (chartData.length === 0 || displayedMetrics.length === 0) {
+      return
+    }
+
+    const newInsights: Insight[] = []
+    
+    // Use the first displayed metric for analysis
+    const primaryMetric = displayedMetrics[0]
+    const metricLabel = primaryMetric.label
+    
+    // Extract data for both companies
+    const company1Data = chartData.map(d => ({
+      year: d.year,
+      value: d[`${company1} - ${metricLabel}`] as number || 0
+    }))
+    
+    const company2Data = chartData.map(d => ({
+      year: d.year,
+      value: d[`${company2} - ${metricLabel}`] as number || 0
+    }))
+    
+    // Insight 1: Highest Performing Company (based on average value)
+    const company1Avg = company1Data.reduce((sum, d) => sum + d.value, 0) / company1Data.length
+    const company2Avg = company2Data.reduce((sum, d) => sum + d.value, 0) / company2Data.length
+    const topPerformer = company1Avg > company2Avg ? company1 : company2
+    const topValue = Math.max(company1Avg, company2Avg)
+    
+    newInsights.push({
+      title: '🏆 Highest Performing Company',
+      description: `${topPerformer} leads with an average ${metricLabel} of $${topValue.toLocaleString('en-US', { maximumFractionDigits: 0 })} across ${selectedStartYear}-${selectedEndYear}.`
+    })
+    
+    // Insight 2: Biggest Improvement (year-over-year change from first to last year)
+    if (company1Data.length > 1 && company2Data.length > 1) {
+      const company1Change = company1Data[company1Data.length - 1].value - company1Data[0].value
+      const company2Change = company2Data[company2Data.length - 1].value - company2Data[0].value
+      
+      const biggestImprover = Math.abs(company1Change) > Math.abs(company2Change) ? company1 : company2
+      const improverChange = Math.max(Math.abs(company1Change), Math.abs(company2Change))
+      const direction = (biggestImprover === company1 ? company1Change : company2Change) > 0 ? 'improved' : 'declined'
+      
+      newInsights.push({
+        title: '📈 Biggest Change Over Time',
+        description: `${biggestImprover} ${direction} by $${improverChange.toLocaleString('en-US', { maximumFractionDigits: 0 })} from ${selectedStartYear} to ${selectedEndYear}.`
+      })
+    }
+    
+    // Insight 3: Volatility (standard deviation or range)
+    const company1Volatility = Math.max(...company1Data.map(d => d.value)) - Math.min(...company1Data.map(d => d.value))
+    const company2Volatility = Math.max(...company2Data.map(d => d.value)) - Math.min(...company2Data.map(d => d.value))
+    
+    const mostVolatile = company1Volatility > company2Volatility ? company1 : company2
+    const volatilityRange = Math.max(company1Volatility, company2Volatility)
+    
+    newInsights.push({
+      title: '⚡ Highest Variability',
+      description: `${mostVolatile} shows the largest fluctuation in ${metricLabel}, with a range of $${volatilityRange.toLocaleString('en-US', { maximumFractionDigits: 0 })} between its highest and lowest values.`
+    })
+    
+    setInsights(newInsights)
   }
 
   const colors: { [key: string]: string } = {
@@ -285,13 +355,22 @@ function App() {
             </div>
           </div>
 
-          <button
-            onClick={fetchComparisonData}
-            disabled={loading || !company1 || !company2}
-            className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white font-bold py-3 px-6 rounded-lg transition-colors"
-          >
-            {loading ? 'Loading...' : 'Compare Companies'}
-          </button>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <button
+              onClick={fetchComparisonData}
+              disabled={loading || !company1 || !company2}
+              className="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white font-bold py-3 px-6 rounded-lg transition-colors"
+            >
+              {loading ? 'Loading...' : 'Compare Companies'}
+            </button>
+            <button
+              onClick={generateInsights}
+              disabled={chartData.length === 0}
+              className="bg-green-600 hover:bg-green-700 disabled:bg-gray-400 text-white font-bold py-3 px-6 rounded-lg transition-colors"
+            >
+              Generate Insights
+            </button>
+          </div>
 
           {error && <p className="text-red-500 mt-4 text-center">{error}</p>}
         </div>
@@ -334,6 +413,20 @@ function App() {
                 </div>
               ))}
             </div>
+
+            {insights.length > 0 && (
+              <div className="mt-8">
+                <h2 className="text-2xl font-bold mb-6">AI-Generated Insights</h2>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                  {insights.map((insight, index) => (
+                    <div key={index} className="bg-white rounded-lg shadow-lg p-6 border-l-4 border-blue-500">
+                      <h3 className="text-lg font-semibold mb-3 text-gray-800">{insight.title}</h3>
+                      <p className="text-gray-700 leading-relaxed">{insight.description}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>
