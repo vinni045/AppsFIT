@@ -74,6 +74,7 @@ function App() {
   const [company2, setCompany2] = useState<string>('')
   const [chartData, setChartData] = useState<FinancialData[]>([])
   const [loading, setLoading] = useState(false)
+  const [pngExporting, setPngExporting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [insights, setInsights] = useState<Insight[]>([])
 
@@ -283,26 +284,50 @@ function App() {
       return
     }
 
+    setPngExporting(true)
+
     try {
-      const canvas = await html2canvas(chartsContainerRef.current, {
-        backgroundColor: '#ffffff',
-        scale: 2,
-        logging: false,
-      })
+      // Add a small delay to ensure charts are fully rendered
+      await new Promise(resolve => setTimeout(resolve, 500))
 
-      const link = document.createElement('a')
-      link.href = canvas.toDataURL('image/png')
-      link.download = `${company1}_vs_${company2}_charts.png`
-      link.style.visibility = 'hidden'
+      // Clone the container to avoid modifying the original
+      const containerClone = chartsContainerRef.current.cloneNode(true) as HTMLElement
+      
+      // Temporarily append to body for html2canvas to capture
+      containerClone.style.position = 'absolute'
+      containerClone.style.left = '-9999px'
+      document.body.appendChild(containerClone)
 
-      document.body.appendChild(link)
-      link.click()
-      document.body.removeChild(link)
+      try {
+        const canvas = await html2canvas(containerClone, {
+          backgroundColor: '#ffffff',
+          scale: 2,
+          logging: false,
+          useCORS: true,
+          allowTaint: true,
+          imageTimeout: 0,
+          foreignObjectRendering: true,
+        })
 
-      setError(null)
+        const link = document.createElement('a')
+        link.href = canvas.toDataURL('image/png')
+        link.download = `${company1}_vs_${company2}_charts.png`
+        link.style.visibility = 'hidden'
+
+        document.body.appendChild(link)
+        link.click()
+        document.body.removeChild(link)
+
+        setError(null)
+      } finally {
+        // Clean up the cloned element
+        document.body.removeChild(containerClone)
+      }
     } catch (err) {
       console.error('Failed to export charts:', err)
-      setError('Failed to export charts as PNG')
+      setError('Failed to export charts as PNG. Please try again or check browser console for details.')
+    } finally {
+      setPngExporting(false)
     }
   }
 
@@ -471,9 +496,10 @@ function App() {
               </button>
               <button
                 onClick={exportToPNG}
-                className="bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-700 hover:to-indigo-800 text-white font-bold py-3 px-6 rounded-xl transition-all duration-200 transform hover:scale-105 shadow-lg flex items-center justify-center gap-2"
+                disabled={pngExporting}
+                className="bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-700 hover:to-indigo-800 disabled:from-slate-400 disabled:to-slate-500 text-white font-bold py-3 px-6 rounded-xl transition-all duration-200 transform hover:scale-105 disabled:scale-100 shadow-lg flex items-center justify-center gap-2"
               >
-                📊 Export as PNG
+                {pngExporting ? '⏳ Exporting...' : '📊 Export as PNG'}
               </button>
             </div>
           )}
