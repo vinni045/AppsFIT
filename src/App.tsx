@@ -296,17 +296,24 @@ function App() {
       // Temporarily append to body for html2canvas to capture
       containerClone.style.position = 'absolute'
       containerClone.style.left = '-9999px'
+      containerClone.style.top = '0'
+      containerClone.style.display = 'block'
       document.body.appendChild(containerClone)
+
+      // Wait for DOM to update
+      await new Promise(resolve => setTimeout(resolve, 100))
 
       try {
         const canvas = await html2canvas(containerClone, {
           backgroundColor: '#ffffff',
           scale: 2,
-          logging: false,
+          logging: true,
           useCORS: true,
           allowTaint: true,
           imageTimeout: 0,
-          foreignObjectRendering: true,
+          foreignObjectRendering: false,
+          windowWidth: 1280,
+          windowHeight: 800,
         })
 
         const link = document.createElement('a')
