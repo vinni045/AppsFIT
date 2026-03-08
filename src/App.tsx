@@ -239,72 +239,126 @@ function App() {
       return
     }
 
-    let csvContent = ''
+    // Define units for each metric
+    const metricUnits: { [key: string]: string } = {
+      'Net Revenue': '(Millions USD)',
+      'Cost of Goods': '(Millions USD)',
+      'Total Assets': '(Millions USD)',
+      'Gross Margin': '(%)',
+      'Operating Profit': '(%)',
+      'Net Profit': '(%)',
+    }
 
-    // Section 1: Raw Financials Data
-    csvContent += 'RAW FINANCIALS DATA\n'
-    csvContent += '===================\n\n'
-    
-    // Get all unique metrics from raw financials
-    const allKeys = new Set<string>()
+    // Get all unique raw financial metrics
+    const allRawKeys = new Set<string>()
     rawFinancials.forEach(row => {
       Object.keys(row).forEach(key => {
         if (key !== 'company_name' && key !== 'year') {
-          allKeys.add(key)
+          allRawKeys.add(key)
         }
       })
     })
-    
-    // Group by company
-    const company1Data = rawFinancials.filter(r => r.company_name === company1)
-    const company2Data = rawFinancials.filter(r => r.company_name === company2)
-    
-    // Create headers for raw financials
-    const rawHeaders = Array.from(allKeys).sort()
-    csvContent += `Company,Year,${rawHeaders.join(',')}\n`
-    
-    // Add company1 data
-    company1Data.sort((a, b) => a.year - b.year).forEach(row => {
-      const values = [company1, row.year, ...rawHeaders.map(key => {
-        const value = row[key]
-        return typeof value === 'number' 
-          ? value.toLocaleString('en-US', { maximumFractionDigits: 2 })
-          : (value || '')
-      })]
-      csvContent += values.join(',') + '\n'
-    })
-    
-    // Add company2 data
-    company2Data.sort((a, b) => a.year - b.year).forEach(row => {
-      const values = [company2, row.year, ...rawHeaders.map(key => {
-        const value = row[key]
-        return typeof value === 'number' 
-          ? value.toLocaleString('en-US', { maximumFractionDigits: 2 })
-          : (value || '')
-      })]
-      csvContent += values.join(',') + '\n'
-    })
-    
-    // Section 2: Financial Metrics Comparison
-    csvContent += '\n\nFINANCIAL METRICS COMPARISON\n'
-    csvContent += '===========================\n\n'
-    
-    // Get all metric headers from chart data
-    const metricHeaders = chartData.length > 0 
-      ? Object.keys(chartData[0]).filter(key => key !== 'year')
-      : []
+    const rawHeaders = Array.from(allRawKeys).sort()
 
-    // Create CSV header row for metrics
-    csvContent += ['Year', ...metricHeaders].join(',') + '\n'
+    // Get all selected metrics (financial metrics)
+    const selectedMetricKeys = displayedMetrics.map(m => m.key)
 
-    // Create CSV data rows for metrics
+    // Create a combined dataset by year
+    const combinedData: { [year: number]: any } = {}
+
+    // Initialize combined data from chart data (which has financial metrics)
     chartData.forEach(row => {
-      const values = [row.year, ...metricHeaders.map(header => {
-        const value = row[header as keyof typeof row]
-        return typeof value === 'number' 
-          ? value.toLocaleString('en-US', { maximumFractionDigits: 2 })
-          : (value || '')
-      })]
+      combinedData[row.year] = { year: row.year }
+    })
+
+    // Add raw financial data to combined data
+    rawFinancials.forEach(row => {
+      const year = row.year
+      if (!combinedData[year]) {
+        combinedData[year] = { year }
+      }
+
+      if (row.company_name === company1) {
+        combinedData[year][`${company1}_raw`] = row
+      } else if (row.company_name === company2) {
+        combinedData[year][`${company2}_raw`] = row
+      }
+    })
+
+    // Sort by year
+    const sortedYears = Object.keys(combinedData).map(Number).sort((a, b) => a - b)
+
+    // Build header row
+    const headers: string[] = ['Year']
+
+    // Add raw financial headers for company 1
+    rawHeaders.forEach(header => {
+      headers.push(`${company1} - ${header}`)
+    })
+
+    // Add financial metrics headers for company 1
+    selectedMetricKeys.forEach(metric => {
+      const unit = metricUnits[metric] || ''
+      headers.push(`${company1} - ${metric} ${unit}`)
+    })
+
+    // Add raw financial headers for company 2
+    rawHeaders.forEach(header => {
+      headers.push(`${company2} - ${header}`)
+    })
+
+    // Add financial metrics headers for company 2
+    selectedMetricKeys.forEach(metric => {
+      const unit = metricUnits[metric] || ''
+      headers.push(`${company2} - ${metric} ${unit}`)
+    })
+
+    // Create CSV header with clear section separators
+    let csvContent = 'FINANCIAL DATA COMPARISON\n'
+    csvContent += '=========================\n\n'
+    csvContent += headers.join(',') + '\n'
+
+    // Create data rows
+    sortedYears.forEach(year => {
+      const yearData = combinedData[year]
+      const values: (string | number)[] = [year]
+
+      // Add company1 raw financial data
+      rawHeaders.forEach(header => {
+        const rawData = yearData[`${company1}_raw`]
+        if (rawData) {
+          const value = rawData[header]
+          values.push(typeof value === 'number' ? value.toLocaleString('en-US', { maximumFractionDigits: 2 }) : '')
+        } else {
+          values.push('')
+        }
+      })
+
+      // Add company1 financial metrics
+      selectedMetricKeys.forEach(metric => {
+        const key = `${company1} - ${metric}`
+        const value = yearData[key]
+        values.push(typeof value === 'number' ? value.toLocaleString('en-US', { maximumFractionDigits: 2 }) : '')
+      })
+
+      // Add company2 raw financial data
+      rawHeaders.forEach(header => {
+        const rawData = yearData[`${company2}_raw`]
+        if (rawData) {
+          const value = rawData[header]
+          values.push(typeof value === 'number' ? value.toLocaleString('en-US', { maximumFractionDigits: 2 }) : '')
+        } else {
+          values.push('')
+        }
+      })
+
+      // Add company2 financial metrics
+      selectedMetricKeys.forEach(metric => {
+        const key = `${company2} - ${metric}`
+        const value = yearData[key]
+        values.push(typeof value === 'number' ? value.toLocaleString('en-US', { maximumFractionDigits: 2 }) : '')
+      })
+
       csvContent += values.join(',') + '\n'
     })
 
@@ -312,11 +366,11 @@ function App() {
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
     const link = document.createElement('a')
     const url = URL.createObjectURL(blob)
-    
+
     link.setAttribute('href', url)
     link.setAttribute('download', `${company1}_vs_${company2}_comparison.csv`)
     link.style.visibility = 'hidden'
-    
+
     document.body.appendChild(link)
     link.click()
     document.body.removeChild(link)
