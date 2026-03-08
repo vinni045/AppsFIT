@@ -1,6 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
-import html2canvas from 'html2canvas'
 
 interface FinancialData {
   year: number
@@ -74,9 +73,9 @@ function App() {
   const [company2, setCompany2] = useState<string>('')
   const [chartData, setChartData] = useState<FinancialData[]>([])
   const [loading, setLoading] = useState(false)
-  const [pngExporting, setPngExporting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [insights, setInsights] = useState<Insight[]>([])
+  const [rawFinancials, setRawFinancials] = useState<any[]>([])
 
   // Filter state
   const [selectedSegment, setSelectedSegment] = useState('All Segments')
@@ -160,6 +159,7 @@ function App() {
 
         const sortedData = Object.values(chartDataByYear).sort((a, b) => a.year - b.year)
         setChartData(sortedData)
+        setRawFinancials(financials)
         setLoading(false)
       })
       .catch(err => {
@@ -234,33 +234,79 @@ function App() {
 
   // Export functions
   const exportToCSV = () => {
-    if (chartData.length === 0) {
+    if (chartData.length === 0 || rawFinancials.length === 0) {
       setError('No data to export. Please generate comparison data first.')
       return
     }
 
-    // Get all keys except 'year'
-    const headers = chartData.length > 0 
-      ? Object.keys(chartData[0]).filter(key => key !== 'year')
-      : []
+    let csvContent = ''
 
-    // Create CSV header row
-    const csvHeader = ['Year', ...headers].join(',')
-
-    // Create CSV data rows
-    const csvRows = chartData.map(row => {
-      const values = [row.year, ...headers.map(header => {
-        const value = row[header as keyof typeof row]
-        // Format numbers with commas and handle undefined/null
+    // Section 1: Raw Financials Data
+    csvContent += 'RAW FINANCIALS DATA\n'
+    csvContent += '===================\n\n'
+    
+    // Get all unique metrics from raw financials
+    const allKeys = new Set<string>()
+    rawFinancials.forEach(row => {
+      Object.keys(row).forEach(key => {
+        if (key !== 'company_name' && key !== 'year') {
+          allKeys.add(key)
+        }
+      })
+    })
+    
+    // Group by company
+    const company1Data = rawFinancials.filter(r => r.company_name === company1)
+    const company2Data = rawFinancials.filter(r => r.company_name === company2)
+    
+    // Create headers for raw financials
+    const rawHeaders = Array.from(allKeys).sort()
+    csvContent += `Company,Year,${rawHeaders.join(',')}\n`
+    
+    // Add company1 data
+    company1Data.sort((a, b) => a.year - b.year).forEach(row => {
+      const values = [company1, row.year, ...rawHeaders.map(key => {
+        const value = row[key]
         return typeof value === 'number' 
           ? value.toLocaleString('en-US', { maximumFractionDigits: 2 })
           : (value || '')
       })]
-      return values.join(',')
+      csvContent += values.join(',') + '\n'
     })
+    
+    // Add company2 data
+    company2Data.sort((a, b) => a.year - b.year).forEach(row => {
+      const values = [company2, row.year, ...rawHeaders.map(key => {
+        const value = row[key]
+        return typeof value === 'number' 
+          ? value.toLocaleString('en-US', { maximumFractionDigits: 2 })
+          : (value || '')
+      })]
+      csvContent += values.join(',') + '\n'
+    })
+    
+    // Section 2: Financial Metrics Comparison
+    csvContent += '\n\nFINANCIAL METRICS COMPARISON\n'
+    csvContent += '===========================\n\n'
+    
+    // Get all metric headers from chart data
+    const metricHeaders = chartData.length > 0 
+      ? Object.keys(chartData[0]).filter(key => key !== 'year')
+      : []
 
-    // Combine header and data
-    const csvContent = [csvHeader, ...csvRows].join('\n')
+    // Create CSV header row for metrics
+    csvContent += ['Year', ...metricHeaders].join(',') + '\n'
+
+    // Create CSV data rows for metrics
+    chartData.forEach(row => {
+      const values = [row.year, ...metricHeaders.map(header => {
+        const value = row[header as keyof typeof row]
+        return typeof value === 'number' 
+          ? value.toLocaleString('en-US', { maximumFractionDigits: 2 })
+          : (value || '')
+      })]
+      csvContent += values.join(',') + '\n'
+    })
 
     // Create blob and download
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
@@ -276,66 +322,6 @@ function App() {
     document.body.removeChild(link)
 
     setError(null)
-  }
-
-  const exportToPNG = async () => {
-    if (!chartsContainerRef.current) {
-      setError('Charts container not found')
-      return
-    }
-
-    setPngExporting(true)
-
-    try {
-      // Add a small delay to ensure charts are fully rendered
-      await new Promise(resolve => setTimeout(resolve, 500))
-
-      // Clone the container to avoid modifying the original
-      const containerClone = chartsContainerRef.current.cloneNode(true) as HTMLElement
-      
-      // Temporarily append to body for html2canvas to capture
-      containerClone.style.position = 'absolute'
-      containerClone.style.left = '-9999px'
-      containerClone.style.top = '0'
-      containerClone.style.display = 'block'
-      document.body.appendChild(containerClone)
-
-      // Wait for DOM to update
-      await new Promise(resolve => setTimeout(resolve, 100))
-
-      try {
-        const canvas = await html2canvas(containerClone, {
-          backgroundColor: '#ffffff',
-          scale: 2,
-          logging: true,
-          useCORS: true,
-          allowTaint: true,
-          imageTimeout: 0,
-          foreignObjectRendering: false,
-          windowWidth: 1280,
-          windowHeight: 800,
-        })
-
-        const link = document.createElement('a')
-        link.href = canvas.toDataURL('image/png')
-        link.download = `${company1}_vs_${company2}_charts.png`
-        link.style.visibility = 'hidden'
-
-        document.body.appendChild(link)
-        link.click()
-        document.body.removeChild(link)
-
-        setError(null)
-      } finally {
-        // Clean up the cloned element
-        document.body.removeChild(containerClone)
-      }
-    } catch (err) {
-      console.error('Failed to export charts:', err)
-      setError('Failed to export charts as PNG. Please try again or check browser console for details.')
-    } finally {
-      setPngExporting(false)
-    }
   }
 
   const colors: { [key: string]: string } = {
@@ -494,19 +480,12 @@ function App() {
           </div>
 
           {chartData.length > 0 && (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-6">
+            <div className="mt-6">
               <button
                 onClick={exportToCSV}
-                className="bg-gradient-to-r from-purple-600 to-purple-700 hover:from-purple-700 hover:to-purple-800 text-white font-bold py-3 px-6 rounded-xl transition-all duration-200 transform hover:scale-105 shadow-lg flex items-center justify-center gap-2"
+                className="w-full bg-gradient-to-r from-purple-600 to-purple-700 hover:from-purple-700 hover:to-purple-800 text-white font-bold py-3 px-6 rounded-xl transition-all duration-200 transform hover:scale-105 shadow-lg flex items-center justify-center gap-2"
               >
                 📥 Download CSV
-              </button>
-              <button
-                onClick={exportToPNG}
-                disabled={pngExporting}
-                className="bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-700 hover:to-indigo-800 disabled:from-slate-400 disabled:to-slate-500 text-white font-bold py-3 px-6 rounded-xl transition-all duration-200 transform hover:scale-105 disabled:scale-100 shadow-lg flex items-center justify-center gap-2"
-              >
-                {pngExporting ? '⏳ Exporting...' : '📊 Export as PNG'}
               </button>
             </div>
           )}
