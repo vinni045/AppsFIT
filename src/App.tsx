@@ -186,42 +186,42 @@ function App() {
       value: d[`${company2} - ${metricLabel}`] as number || 0
     }))
     
-    // Insight 1: Highest Performing Company (based on average value)
+    // Insight 1: Average Performance Comparison (both companies)
     const company1Avg = company1Data.reduce((sum, d) => sum + d.value, 0) / company1Data.length
     const company2Avg = company2Data.reduce((sum, d) => sum + d.value, 0) / company2Data.length
     const topPerformer = company1Avg > company2Avg ? company1 : company2
-    const topValue = Math.max(company1Avg, company2Avg)
     
     newInsights.push({
-      title: '🏆 Highest Performing Company',
-      description: `${topPerformer} leads with an average ${metricLabel} of $${topValue.toLocaleString('en-US', { maximumFractionDigits: 0 })} across ${selectedStartYear}-${selectedEndYear}.`
+      title: '🏆 Average Performance',
+      description: `${company1}: $${company1Avg.toLocaleString('en-US', { maximumFractionDigits: 0 })} | ${company2}: $${company2Avg.toLocaleString('en-US', { maximumFractionDigits: 0 })} (${topPerformer} leads across ${selectedStartYear}-${selectedEndYear}).`
     })
     
-    // Insight 2: Biggest Improvement (year-over-year change from first to last year)
+    // Insight 2: Change Over Time (both companies)
     if (company1Data.length > 1 && company2Data.length > 1) {
       const company1Change = company1Data[company1Data.length - 1].value - company1Data[0].value
       const company2Change = company2Data[company2Data.length - 1].value - company2Data[0].value
       
-      const biggestImprover = Math.abs(company1Change) > Math.abs(company2Change) ? company1 : company2
-      const improverChange = Math.max(Math.abs(company1Change), Math.abs(company2Change))
-      const direction = (biggestImprover === company1 ? company1Change : company2Change) > 0 ? 'improved' : 'declined'
+      const company1Direction = company1Change > 0 ? 'improved' : 'declined'
+      const company2Direction = company2Change > 0 ? 'improved' : 'declined'
+      const company1ChangeAbs = Math.abs(company1Change)
+      const company2ChangeAbs = Math.abs(company2Change)
+      const biggestChanger = company1ChangeAbs > company2ChangeAbs ? company1 : company2
       
       newInsights.push({
-        title: '📈 Biggest Change Over Time',
-        description: `${biggestImprover} ${direction} by $${improverChange.toLocaleString('en-US', { maximumFractionDigits: 0 })} from ${selectedStartYear} to ${selectedEndYear}.`
+        title: '📈 Change Over Time',
+        description: `${company1} ${company1Direction} by $${company1ChangeAbs.toLocaleString('en-US', { maximumFractionDigits: 0 })} | ${company2} ${company2Direction} by $${company2ChangeAbs.toLocaleString('en-US', { maximumFractionDigits: 0 })} (${biggestChanger} changed most from ${selectedStartYear} to ${selectedEndYear}).`
       })
     }
     
-    // Insight 3: Volatility (standard deviation or range)
+    // Insight 3: Volatility (both companies)
     const company1Volatility = Math.max(...company1Data.map(d => d.value)) - Math.min(...company1Data.map(d => d.value))
     const company2Volatility = Math.max(...company2Data.map(d => d.value)) - Math.min(...company2Data.map(d => d.value))
     
     const mostVolatile = company1Volatility > company2Volatility ? company1 : company2
-    const volatilityRange = Math.max(company1Volatility, company2Volatility)
     
     newInsights.push({
-      title: '⚡ Highest Variability',
-      description: `${mostVolatile} shows the largest fluctuation in ${metricLabel}, with a range of $${volatilityRange.toLocaleString('en-US', { maximumFractionDigits: 0 })} between its highest and lowest values.`
+      title: '⚡ Variability Range',
+      description: `${company1}: $${company1Volatility.toLocaleString('en-US', { maximumFractionDigits: 0 })} | ${company2}: $${company2Volatility.toLocaleString('en-US', { maximumFractionDigits: 0 })} (${mostVolatile} shows highest fluctuation).`
     })
     
     setInsights(newInsights)
