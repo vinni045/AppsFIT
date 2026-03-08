@@ -71,7 +71,8 @@ function App() {
 
   // Filter state
   const [selectedSegment, setSelectedSegment] = useState('All Segments')
-  const [selectedYear, setSelectedYear] = useState(2024)
+  const [selectedStartYear, setSelectedStartYear] = useState(2020)
+  const [selectedEndYear, setSelectedEndYear] = useState(2024)
   const [selectedMetricPreset, setSelectedMetricPreset] = useState('all')
 
   // Filtered companies list based on segment selection
@@ -124,7 +125,7 @@ function App() {
       SELECT f.company_name, f.year, ${selectedMetricKeys}
       FROM financials f
       WHERE (f.company_name = '${company1}' OR f.company_name = '${company2}')
-      AND f.year = ${selectedYear}
+      AND f.year BETWEEN ${selectedStartYear} AND ${selectedEndYear}
       ORDER BY f.year
     `
     const url = `https://www.dolthub.com/api/v1alpha1/calvinw/BusMgmtBenchmarks?q=${encodeURIComponent(query)}`
@@ -180,7 +181,7 @@ function App() {
         {/* Filter Panel */}
         <div className="bg-white rounded-lg shadow-lg p-6 mb-8">
           <h2 className="text-xl font-semibold mb-4">Filters</h2>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-6">
             <div>
               <label htmlFor="segment-select" className="block text-sm font-semibold mb-2">Retail Category</label>
               <select
@@ -206,14 +207,28 @@ function App() {
             </div>
 
             <div>
-              <label htmlFor="year-select" className="block text-sm font-semibold mb-2">Year</label>
+              <label htmlFor="start-year-select" className="block text-sm font-semibold mb-2">Start Year</label>
               <select
-                id="year-select"
-                value={selectedYear}
-                onChange={e => setSelectedYear(Number(e.target.value))}
+                id="start-year-select"
+                value={selectedStartYear}
+                onChange={e => setSelectedStartYear(Number(e.target.value))}
                 className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
-                {[2024, 2023, 2022, 2021, 2020, 2019, 2018].map(y => (
+                {[2018, 2019, 2020, 2021, 2022, 2023, 2024].map(y => (
+                  <option key={y} value={y}>{y}</option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label htmlFor="end-year-select" className="block text-sm font-semibold mb-2">End Year</label>
+              <select
+                id="end-year-select"
+                value={selectedEndYear}
+                onChange={e => setSelectedEndYear(Number(e.target.value))}
+                className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                {[2018, 2019, 2020, 2021, 2022, 2023, 2024].map(y => (
                   <option key={y} value={y}>{y}</option>
                 ))}
               </select>
