@@ -1,5 +1,6 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
+import html2canvas from 'html2canvas'
 
 interface FinancialData {
   year: number
@@ -81,6 +82,9 @@ function App() {
   const [selectedStartYear, setSelectedStartYear] = useState(2020)
   const [selectedEndYear, setSelectedEndYear] = useState(2024)
   const [selectedMetricPreset, setSelectedMetricPreset] = useState('all')
+
+  // Refs for export functionality
+  const chartsContainerRef = useRef<HTMLDivElement>(null)
 
   // Filtered companies list based on segment selection
   const filteredCompanies = selectedSegment === 'All Segments'
@@ -227,6 +231,81 @@ function App() {
     setInsights(newInsights)
   }
 
+  // Export functions
+  const exportToCSV = () => {
+    if (chartData.length === 0) {
+      setError('No data to export. Please generate comparison data first.')
+      return
+    }
+
+    // Get all keys except 'year'
+    const headers = chartData.length > 0 
+      ? Object.keys(chartData[0]).filter(key => key !== 'year')
+      : []
+
+    // Create CSV header row
+    const csvHeader = ['Year', ...headers].join(',')
+
+    // Create CSV data rows
+    const csvRows = chartData.map(row => {
+      const values = [row.year, ...headers.map(header => {
+        const value = row[header as keyof typeof row]
+        // Format numbers with commas and handle undefined/null
+        return typeof value === 'number' 
+          ? value.toLocaleString('en-US', { maximumFractionDigits: 2 })
+          : (value || '')
+      })]
+      return values.join(',')
+    })
+
+    // Combine header and data
+    const csvContent = [csvHeader, ...csvRows].join('\n')
+
+    // Create blob and download
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
+    const link = document.createElement('a')
+    const url = URL.createObjectURL(blob)
+    
+    link.setAttribute('href', url)
+    link.setAttribute('download', `${company1}_vs_${company2}_comparison.csv`)
+    link.style.visibility = 'hidden'
+    
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+
+    setError(null)
+  }
+
+  const exportToPNG = async () => {
+    if (!chartsContainerRef.current) {
+      setError('Charts container not found')
+      return
+    }
+
+    try {
+      const canvas = await html2canvas(chartsContainerRef.current, {
+        backgroundColor: '#ffffff',
+        scale: 2,
+        logging: false,
+      })
+
+      const link = document.createElement('a')
+      link.href = canvas.toDataURL('image/png')
+      link.download = `${company1}_vs_${company2}_charts.png`
+      link.style.visibility = 'hidden'
+
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+
+      setError(null)
+    } catch (err) {
+      console.error('Failed to export charts:', err)
+      setError('Failed to export charts as PNG')
+    }
+  }
+
   const colors: { [key: string]: string } = {
     [`${company1} - Revenue`]: '#1f77b4',
     [`${company1} - Cost of Goods`]: '#4472c4',
@@ -243,23 +322,30 @@ function App() {
   }
 
   return (
-    <div className="min-h-svh bg-gradient-to-br from-slate-50 to-slate-100 p-8">
+    <div className="min-h-svh bg-gradient-to-br from-slate-50 to-white p-6 md:p-8">
       <div className="max-w-7xl mx-auto">
-        <h1 className="text-5xl font-bold text-center mb-2">Company Financial Comparison</h1>
-        <p className="text-center text-gray-600 mb-8">Compare financial metrics between two companies</p>
+        {/* Header Section */}
+        <div className="text-center mb-12">
+          <h1 className="text-6xl font-bold text-slate-900 mb-3 tracking-tight">
+            Financial Comparison Dashboard
+          </h1>
+          <p className="text-xl text-slate-600">Compare key financial metrics between retail companies</p>
+        </div>
 
         {/* Filter Panel */}
-        <div className="bg-white rounded-lg shadow-lg p-6 mb-8">
-          <h2 className="text-xl font-semibold mb-4">Filters</h2>
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-6">
+        <div className="bg-white rounded-2xl border border-slate-200 p-8 mb-8 shadow-lg">
+          <div className="flex items-center gap-3 mb-6">
+            <div className="w-1 h-8 bg-gradient-to-b from-blue-400 to-blue-600 rounded"></div>
+            <h2 className="text-2xl font-bold text-slate-900">Filtering Options</h2>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
             <div>
-              <label htmlFor="segment-select" className="block text-sm font-semibold mb-2">Retail Category</label>
+              <label htmlFor="segment-select" className="block text-sm font-semibold text-slate-700 mb-3">📂 Retail Category</label>
               <select
                 id="segment-select"
                 value={selectedSegment}
                 onChange={e => {
                   setSelectedSegment(e.target.value)
-                  // Reset company selections when segment changes
                   const newFiltered = e.target.value === 'All Segments'
                     ? allCompanies.map(c => c.display_name)
                     : allCompanies.filter(c => c.segment === e.target.value).map(c => c.display_name)
@@ -268,7 +354,7 @@ function App() {
                     setCompany2(newFiltered[1])
                   }
                 }}
-                className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full bg-white border border-slate-300 rounded-xl px-4 py-3 text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
               >
                 {SEGMENTS.map(segment => (
                   <option key={segment} value={segment}>{segment}</option>
@@ -277,12 +363,12 @@ function App() {
             </div>
 
             <div>
-              <label htmlFor="start-year-select" className="block text-sm font-semibold mb-2">Start Year</label>
+              <label htmlFor="start-year-select" className="block text-sm font-semibold text-slate-700 mb-3">📅 Start Year</label>
               <select
                 id="start-year-select"
                 value={selectedStartYear}
                 onChange={e => setSelectedStartYear(Number(e.target.value))}
-                className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full bg-white border border-slate-300 rounded-xl px-4 py-3 text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
               >
                 {[2018, 2019, 2020, 2021, 2022, 2023, 2024].map(y => (
                   <option key={y} value={y}>{y}</option>
@@ -291,12 +377,12 @@ function App() {
             </div>
 
             <div>
-              <label htmlFor="end-year-select" className="block text-sm font-semibold mb-2">End Year</label>
+              <label htmlFor="end-year-select" className="block text-sm font-semibold text-slate-700 mb-3">📅 End Year</label>
               <select
                 id="end-year-select"
                 value={selectedEndYear}
                 onChange={e => setSelectedEndYear(Number(e.target.value))}
-                className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full bg-white border border-slate-300 rounded-xl px-4 py-3 text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
               >
                 {[2018, 2019, 2020, 2021, 2022, 2023, 2024].map(y => (
                   <option key={y} value={y}>{y}</option>
@@ -305,12 +391,12 @@ function App() {
             </div>
 
             <div>
-              <label htmlFor="metric-select" className="block text-sm font-semibold mb-2">Metrics</label>
+              <label htmlFor="metric-select" className="block text-sm font-semibold text-slate-700 mb-3">📊 Metrics</label>
               <select
                 id="metric-select"
                 value={selectedMetricPreset}
                 onChange={e => setSelectedMetricPreset(e.target.value)}
-                className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full bg-white border border-slate-300 rounded-xl px-4 py-3 text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
               >
                 {METRIC_PRESETS.map(preset => (
                   <option key={preset.id} value={preset.id}>{preset.label}</option>
@@ -321,16 +407,19 @@ function App() {
         </div>
 
         {/* Company Selection Panel */}
-        <div className="bg-white rounded-lg shadow-lg p-8 mb-8">
-          <h2 className="text-xl font-semibold mb-4">Select Companies to Compare</h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+        <div className="bg-white rounded-2xl border border-slate-200 p-8 mb-8 shadow-lg">
+          <div className="flex items-center gap-3 mb-6">
+            <div className="w-1 h-8 bg-gradient-to-b from-emerald-400 to-emerald-600 rounded"></div>
+            <h2 className="text-2xl font-bold text-slate-900">Company Comparison</h2>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-8">
             <div>
-              <label htmlFor="company1-select" className="block text-sm font-semibold mb-2">Company 1</label>
+              <label htmlFor="company1-select" className="block text-sm font-semibold text-slate-700 mb-3">🏢 Company 1</label>
               <select
                 id="company1-select"
                 value={company1}
                 onChange={e => setCompany1(e.target.value)}
-                className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full bg-white border border-slate-300 rounded-xl px-4 py-3 text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition-all"
               >
                 <option value="">Select Company</option>
                 {filteredCompanies.map(c => (
@@ -340,12 +429,12 @@ function App() {
             </div>
 
             <div>
-              <label htmlFor="company2-select" className="block text-sm font-semibold mb-2">Company 2</label>
+              <label htmlFor="company2-select" className="block text-sm font-semibold text-slate-700 mb-3">🏢 Company 2</label>
               <select
                 id="company2-select"
                 value={company2}
                 onChange={e => setCompany2(e.target.value)}
-                className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full bg-white border border-slate-300 rounded-xl px-4 py-3 text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition-all"
               >
                 <option value="">Select Company</option>
                 {filteredCompanies.map(c => (
@@ -359,69 +448,101 @@ function App() {
             <button
               onClick={fetchComparisonData}
               disabled={loading || !company1 || !company2}
-              className="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white font-bold py-3 px-6 rounded-lg transition-colors"
+              className="bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 disabled:from-slate-400 disabled:to-slate-500 text-white font-bold py-3 px-6 rounded-xl transition-all duration-200 transform hover:scale-105 disabled:scale-100 shadow-lg"
             >
-              {loading ? 'Loading...' : 'Compare Companies'}
+              {loading ? '⏳ Loading...' : '▶️ Compare Companies'}
             </button>
             <button
               onClick={generateInsights}
               disabled={chartData.length === 0}
-              className="bg-green-600 hover:bg-green-700 disabled:bg-gray-400 text-white font-bold py-3 px-6 rounded-lg transition-colors"
+              className="bg-gradient-to-r from-emerald-600 to-emerald-700 hover:from-emerald-700 hover:to-emerald-800 disabled:from-slate-400 disabled:to-slate-500 text-white font-bold py-3 px-6 rounded-xl transition-all duration-200 transform hover:scale-105 disabled:scale-100 shadow-lg"
             >
-              Generate Insights
+              ✨ Generate Insights
             </button>
           </div>
 
-          {error && <p className="text-red-500 mt-4 text-center">{error}</p>}
+          {chartData.length > 0 && (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-6">
+              <button
+                onClick={exportToCSV}
+                className="bg-gradient-to-r from-purple-600 to-purple-700 hover:from-purple-700 hover:to-purple-800 text-white font-bold py-3 px-6 rounded-xl transition-all duration-200 transform hover:scale-105 shadow-lg flex items-center justify-center gap-2"
+              >
+                📥 Download CSV
+              </button>
+              <button
+                onClick={exportToPNG}
+                className="bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-700 hover:to-indigo-800 text-white font-bold py-3 px-6 rounded-xl transition-all duration-200 transform hover:scale-105 shadow-lg flex items-center justify-center gap-2"
+              >
+                📊 Export as PNG
+              </button>
+            </div>
+          )}
+
+          {error && <p className="text-red-600 mt-6 text-center font-semibold bg-red-50 border border-red-200 rounded-xl p-4">{error}</p>}
         </div>
 
         {chartData.length > 0 && (
           <div>
-            <h2 className="text-2xl font-bold mb-6">Financial Metrics Comparison</h2>
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-              {displayedMetrics.map(metric => (
-                <div key={metric.key} className="bg-white rounded-lg shadow-lg p-8">
-                  <h3 className="text-xl font-semibold mb-4">{metric.label}</h3>
-                  <ResponsiveContainer width="100%" height={400}>
-                    <LineChart data={chartData} margin={{ top: 5, right: 30, left: 100, bottom: 5 }}>
-                      <CartesianGrid strokeDasharray="3 3" />
-                      <XAxis dataKey="year" label={{ value: 'Year', position: 'insideBottomRight', offset: -5 }} />
-                      <YAxis label={{ value: 'USD (thousands)', angle: -90, position: 'left', offset: 10 }} />
-                      <Tooltip 
-                        formatter={(value: any) => value ? `$${value.toLocaleString()}` : '$0'}
-                        contentStyle={{ backgroundColor: '#fff', border: '1px solid #ccc', borderRadius: '4px' }}
-                      />
-                      <Legend wrapperStyle={{ paddingTop: '20px' }} />
-                      <Line
-                        type="monotone"
-                        dataKey={`${company1} - ${metric.label}`}
-                        stroke={colors[`${company1} - ${metric.label}`] || '#000'}
-                        strokeWidth={2}
-                        dot={false}
-                        isAnimationActive={false}
-                      />
-                      <Line
-                        type="monotone"
-                        dataKey={`${company2} - ${metric.label}`}
-                        stroke={colors[`${company2} - ${metric.label}`] || '#000'}
-                        strokeWidth={2}
-                        dot={false}
-                        isAnimationActive={false}
-                      />
-                    </LineChart>
-                  </ResponsiveContainer>
-                </div>
-              ))}
+            {/* Performance Trends Section */}
+            <div className="mb-12">
+              <div className="flex items-center gap-3 mb-8">
+                <div className="w-1 h-10 bg-gradient-to-b from-cyan-400 to-cyan-600 rounded"></div>
+                <h2 className="text-3xl font-bold text-slate-900">Performance Trends</h2>
+              </div>
+              <div ref={chartsContainerRef} className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                {displayedMetrics.map(metric => (
+                  <div key={metric.key} className="group bg-white rounded-2xl border border-slate-200 p-8 shadow-lg hover:shadow-xl transition-all duration-300 transform hover:-translate-y-1">
+                    <h3 className="text-xl font-bold text-slate-900 mb-6 flex items-center gap-2">
+                      <span className="text-2xl">📈</span>
+                      {metric.label}
+                    </h3>
+                    <div className="bg-slate-50 rounded-xl p-4">
+                      <ResponsiveContainer width="100%" height={400}>
+                        <LineChart data={chartData} margin={{ top: 5, right: 30, left: 100, bottom: 5 }}>
+                          <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,0.1)" />
+                          <XAxis dataKey="year" stroke="rgba(0,0,0,0.6)" label={{ value: 'Year', position: 'insideBottomRight', offset: -5, fill: 'rgba(0,0,0,0.8)' }} />
+                          <YAxis stroke="rgba(0,0,0,0.6)" label={{ value: 'USD (thousands)', angle: -90, position: 'left', offset: 10, fill: 'rgba(0,0,0,0.8)' }} />
+                          <Tooltip 
+                            formatter={(value: any) => value ? `$${value.toLocaleString()}` : '$0'}
+                            contentStyle={{ backgroundColor: '#fff', border: '1px solid #ccc', borderRadius: '12px', color: '#000' }}
+                          />
+                          <Legend wrapperStyle={{ paddingTop: '20px', color: 'rgba(0,0,0,0.8)' }} />
+                          <Line
+                            type="monotone"
+                            dataKey={`${company1} - ${metric.label}`}
+                            stroke={colors[`${company1} - ${metric.label}`] || '#000'}
+                            strokeWidth={3}
+                            dot={false}
+                            isAnimationActive={false}
+                          />
+                          <Line
+                            type="monotone"
+                            dataKey={`${company2} - ${metric.label}`}
+                            stroke={colors[`${company2} - ${metric.label}`] || '#000'}
+                            strokeWidth={3}
+                            dot={false}
+                            isAnimationActive={false}
+                          />
+                        </LineChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
 
             {insights.length > 0 && (
-              <div className="mt-8">
-                <h2 className="text-2xl font-bold mb-6">AI-Generated Insights</h2>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <div>
+                <div className="flex items-center gap-3 mb-8">
+                  <div className="w-1 h-10 bg-gradient-to-b from-pink-400 to-pink-600 rounded"></div>
+                  <h2 className="text-3xl font-bold text-slate-900">Key Insights</h2>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
                   {insights.map((insight, index) => (
-                    <div key={index} className="bg-white rounded-lg shadow-lg p-6 border-l-4 border-blue-500">
-                      <h3 className="text-lg font-semibold mb-3 text-gray-800">{insight.title}</h3>
-                      <p className="text-gray-700 leading-relaxed">{insight.description}</p>
+                    <div key={index} className="group bg-white rounded-2xl border border-slate-200 p-8 shadow-lg hover:shadow-xl transition-all duration-300 transform hover:-translate-y-1 relative overflow-hidden">
+                      <div className="absolute top-0 left-0 w-1 h-full bg-gradient-to-b from-pink-400 to-pink-600 opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
+                      <h3 className="text-lg font-bold text-slate-900 mb-4 pl-4">{insight.title}</h3>
+                      <p className="text-slate-700 leading-relaxed pl-4">{insight.description}</p>
                     </div>
                   ))}
                 </div>
