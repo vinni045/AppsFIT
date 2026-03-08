@@ -6,15 +6,11 @@ interface FinancialData {
   [key: string]: number | string
 }
 
-interface CompanyFinancials {
-  company_name: string
-  year: number
-  'Net Revenue': number
-  'Cost of Goods': number
-  'Total Assets': number
-  'Gross Margin': number
-  'Operating Profit': number
-  'Net Profit': number
+interface CompanyInfo {
+  company: string
+  display_name: string
+  segment: string
+  subsegment: string
 }
 
 const METRICS = [
@@ -26,32 +22,85 @@ const METRICS = [
   { key: 'Net Profit', label: 'Net Profit' },
 ]
 
+const METRIC_PRESETS = [
+  {
+    id: 'all',
+    label: 'All Metrics',
+    metrics: ['Net Revenue', 'Cost of Goods', 'Total Assets', 'Gross Margin', 'Operating Profit', 'Net Profit'],
+  },
+  {
+    id: 'revenue',
+    label: 'Revenue Metrics',
+    metrics: ['Net Revenue', 'Cost of Goods'],
+  },
+  {
+    id: 'profitability',
+    label: 'Profitability',
+    metrics: ['Gross Margin', 'Operating Profit', 'Net Profit'],
+  },
+  {
+    id: 'assets',
+    label: 'Assets & Equity',
+    metrics: ['Total Assets'],
+  },
+]
+
+const SEGMENTS = [
+  'All Segments',
+  'Department Store',
+  'Discount Store',
+  'Fast Fashion',
+  'Grocery',
+  'Health & Pharmacy',
+  'Home Improvement',
+  'Off Price',
+  'Online',
+  'Resale',
+  'Specialty',
+  'Warehouse Clubs',
+]
+
 function App() {
-  const [companies, setCompanies] = useState<string[]>([])
+  // Company and data fetching
+  const [allCompanies, setAllCompanies] = useState<CompanyInfo[]>([])
   const [company1, setCompany1] = useState<string>('')
   const [company2, setCompany2] = useState<string>('')
-  const [startYear, setStartYear] = useState(2020)
-  const [endYear, setEndYear] = useState(2024)
   const [chartData, setChartData] = useState<FinancialData[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  // Filter state
+  const [selectedSegment, setSelectedSegment] = useState('All Segments')
+  const [selectedYear, setSelectedYear] = useState(2024)
+  const [selectedMetricPreset, setSelectedMetricPreset] = useState('all')
+
+  // Filtered companies list based on segment selection
+  const filteredCompanies = selectedSegment === 'All Segments'
+    ? allCompanies.map(c => c.display_name)
+    : allCompanies.filter(c => c.segment === selectedSegment).map(c => c.display_name)
+
+  // Get metric keys for current preset
+  const currentMetricPreset = METRIC_PRESETS.find(p => p.id === selectedMetricPreset)
+  const displayedMetrics = METRICS.filter(m => 
+    currentMetricPreset?.metrics.includes(m.key)
+  )
 
   useEffect(() => {
     fetchCompanyList()
   }, [])
 
   const fetchCompanyList = () => {
-    const query = `SELECT DISTINCT company_name FROM financials ORDER BY company_name`
+    const query = `SELECT company, display_name, segment, subsegment FROM company_info WHERE segment IS NOT NULL ORDER BY display_name`
     const url = `https://www.dolthub.com/api/v1alpha1/calvinw/BusMgmtBenchmarks?q=${encodeURIComponent(query)}`
 
     fetch(url)
       .then(res => res.json())
       .then(data => {
-        const companyNames = data.rows.map((row: { company_name: string }) => row.company_name)
-        setCompanies(companyNames)
-        if (companyNames.length >= 2) {
-          setCompany1(companyNames[0])
-          setCompany2(companyNames[1])
+        const companies = data.rows as CompanyInfo[]
+        setAllCompanies(companies)
+        if (companies.length >= 2) {
+          setCompany1(companies[0].display_name)
+          setCompany2(companies[1].display_name)
         }
       })
       .catch(err => {
@@ -69,12 +118,13 @@ function App() {
     setLoading(true)
     setError(null)
 
+    // Build SELECT clause with only requested metrics
+    const selectedMetricKeys = displayedMetrics.map(m => `f.\`${m.key}\``).join(', ')
     const query = `
-      SELECT f.company_name, f.year, f.\`Net Revenue\`, f.\`Cost of Goods\`, 
-             f.\`Total Assets\`, f.\`Gross Margin\`, f.\`Operating Profit\`, f.\`Net Profit\`
+      SELECT f.company_name, f.year, ${selectedMetricKeys}
       FROM financials f
       WHERE (f.company_name = '${company1}' OR f.company_name = '${company2}')
-      AND f.year BETWEEN ${startYear} AND ${endYear}
+      AND f.year = ${selectedYear}
       ORDER BY f.year
     `
     const url = `https://www.dolthub.com/api/v1alpha1/calvinw/BusMgmtBenchmarks?q=${encodeURIComponent(query)}`
@@ -82,16 +132,16 @@ function App() {
     fetch(url)
       .then(res => res.json())
       .then(data => {
-        const financials = data.rows as CompanyFinancials[]
+        const financials = data.rows as any[]
         const chartDataByYear: { [year: number]: any } = {}
 
         financials.forEach(row => {
           if (!chartDataByYear[row.year]) {
             chartDataByYear[row.year] = { year: row.year }
           }
-          METRICS.forEach(metric => {
+          displayedMetrics.forEach(metric => {
             const key = `${row.company_name} - ${metric.label}`
-            chartDataByYear[row.year][key] = row[metric.key as keyof CompanyFinancials] || 0
+            chartDataByYear[row.year][key] = row[metric.key] || 0
           })
         })
 
@@ -125,10 +175,70 @@ function App() {
     <div className="min-h-svh bg-gradient-to-br from-slate-50 to-slate-100 p-8">
       <div className="max-w-7xl mx-auto">
         <h1 className="text-5xl font-bold text-center mb-2">Company Financial Comparison</h1>
-        <p className="text-center text-gray-600 mb-8">Compare financial metrics between two companies across multiple years</p>
+        <p className="text-center text-gray-600 mb-8">Compare financial metrics between two companies</p>
 
+        {/* Filter Panel */}
+        <div className="bg-white rounded-lg shadow-lg p-6 mb-8">
+          <h2 className="text-xl font-semibold mb-4">Filters</h2>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+            <div>
+              <label htmlFor="segment-select" className="block text-sm font-semibold mb-2">Retail Category</label>
+              <select
+                id="segment-select"
+                value={selectedSegment}
+                onChange={e => {
+                  setSelectedSegment(e.target.value)
+                  // Reset company selections when segment changes
+                  const newFiltered = e.target.value === 'All Segments'
+                    ? allCompanies.map(c => c.display_name)
+                    : allCompanies.filter(c => c.segment === e.target.value).map(c => c.display_name)
+                  if (newFiltered.length >= 2) {
+                    setCompany1(newFiltered[0])
+                    setCompany2(newFiltered[1])
+                  }
+                }}
+                className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                {SEGMENTS.map(segment => (
+                  <option key={segment} value={segment}>{segment}</option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label htmlFor="year-select" className="block text-sm font-semibold mb-2">Year</label>
+              <select
+                id="year-select"
+                value={selectedYear}
+                onChange={e => setSelectedYear(Number(e.target.value))}
+                className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                {[2024, 2023, 2022, 2021, 2020, 2019, 2018].map(y => (
+                  <option key={y} value={y}>{y}</option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label htmlFor="metric-select" className="block text-sm font-semibold mb-2">Metrics</label>
+              <select
+                id="metric-select"
+                value={selectedMetricPreset}
+                onChange={e => setSelectedMetricPreset(e.target.value)}
+                className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                {METRIC_PRESETS.map(preset => (
+                  <option key={preset.id} value={preset.id}>{preset.label}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+        </div>
+
+        {/* Company Selection Panel */}
         <div className="bg-white rounded-lg shadow-lg p-8 mb-8">
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-6">
+          <h2 className="text-xl font-semibold mb-4">Select Companies to Compare</h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
             <div>
               <label htmlFor="company1-select" className="block text-sm font-semibold mb-2">Company 1</label>
               <select
@@ -138,7 +248,7 @@ function App() {
                 className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
                 <option value="">Select Company</option>
-                {companies.map(c => (
+                {filteredCompanies.map(c => (
                   <option key={c} value={c}>{c}</option>
                 ))}
               </select>
@@ -153,36 +263,8 @@ function App() {
                 className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
                 <option value="">Select Company</option>
-                {companies.map(c => (
+                {filteredCompanies.map(c => (
                   <option key={c} value={c}>{c}</option>
-                ))}
-              </select>
-            </div>
-
-            <div>
-              <label htmlFor="start-year-select" className="block text-sm font-semibold mb-2">Start Year</label>
-              <select
-                id="start-year-select"
-                value={startYear}
-                onChange={e => setStartYear(Number(e.target.value))}
-                className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-              >
-                {[2018, 2019, 2020, 2021, 2022, 2023, 2024].map(y => (
-                  <option key={y} value={y}>{y}</option>
-                ))}
-              </select>
-            </div>
-
-            <div>
-              <label htmlFor="end-year-select" className="block text-sm font-semibold mb-2">End Year</label>
-              <select
-                id="end-year-select"
-                value={endYear}
-                onChange={e => setEndYear(Number(e.target.value))}
-                className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-              >
-                {[2018, 2019, 2020, 2021, 2022, 2023, 2024].map(y => (
-                  <option key={y} value={y}>{y}</option>
                 ))}
               </select>
             </div>
@@ -203,14 +285,14 @@ function App() {
           <div>
             <h2 className="text-2xl font-bold mb-6">Financial Metrics Comparison</h2>
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-              {METRICS.map(metric => (
+              {displayedMetrics.map(metric => (
                 <div key={metric.key} className="bg-white rounded-lg shadow-lg p-8">
                   <h3 className="text-xl font-semibold mb-4">{metric.label}</h3>
                   <ResponsiveContainer width="100%" height={400}>
-                    <LineChart data={chartData} margin={{ top: 5, right: 30, left: 80, bottom: 5 }}>
+                    <LineChart data={chartData} margin={{ top: 5, right: 30, left: 100, bottom: 5 }}>
                       <CartesianGrid strokeDasharray="3 3" />
                       <XAxis dataKey="year" label={{ value: 'Year', position: 'insideBottomRight', offset: -5 }} />
-                      <YAxis label={{ value: 'USD (thousands)', angle: -90, position: 'left' }} />
+                      <YAxis label={{ value: 'USD (thousands)', angle: -90, position: 'left', offset: 10 }} />
                       <Tooltip 
                         formatter={(value: any) => value ? `$${value.toLocaleString()}` : '$0'}
                         contentStyle={{ backgroundColor: '#fff', border: '1px solid #ccc', borderRadius: '4px' }}
