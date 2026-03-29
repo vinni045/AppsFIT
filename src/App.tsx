@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
+import { LineChart, Line, BarChart, Bar, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar, ComposedChart, ScatterChart, Scatter, ZAxis } from 'recharts'
 
 interface FinancialData {
   year: number
@@ -13,10 +13,15 @@ interface CompanyInfo {
   subsegment: string
 }
 
-interface Insight {
-  title: string
-  description: string
-  value?: string
+interface CompanySummary {
+  companyName: string
+  segment: string
+  avgRevenue: number
+  avgProfit: number
+  revenueGrowth: number
+  profitTrend: string
+  topMetric: string
+  performanceNote: string
 }
 
 const METRICS = [
@@ -74,7 +79,7 @@ function App() {
   const [chartData, setChartData] = useState<FinancialData[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [insights, setInsights] = useState<Insight[]>([])
+  const [summary, setSummary] = useState<{ company1: CompanySummary | null, company2: CompanySummary | null, comparison: string }>({ company1: null, company2: null, comparison: '' })
   const [rawFinancials, setRawFinancials] = useState<any[]>([])
 
   // Filter state
@@ -82,6 +87,7 @@ function App() {
   const [selectedStartYear, setSelectedStartYear] = useState(2020)
   const [selectedEndYear, setSelectedEndYear] = useState(2024)
   const [selectedMetricPreset, setSelectedMetricPreset] = useState('all')
+  const [chartType, setChartType] = useState<'line-smooth' | 'line-straight' | 'line-dots' | 'bar' | 'area' | 'composed' | 'radar' | 'scatter'>('line-smooth')
 
   // Refs for export functionality
   const chartsContainerRef = useRef<HTMLDivElement>(null)
@@ -169,67 +175,104 @@ function App() {
       })
   }
 
-  const generateInsights = () => {
-    if (chartData.length === 0 || displayedMetrics.length === 0) {
+  const generateSummary = () => {
+    if (chartData.length === 0 || !company1 || !company2) {
       return
     }
 
-    const newInsights: Insight[] = []
-    
-    // Use the first displayed metric for analysis
-    const primaryMetric = displayedMetrics[0]
-    const metricLabel = primaryMetric.label
-    
-    // Extract data for both companies
-    const company1Data = chartData.map(d => ({
-      year: d.year,
-      value: d[`${company1} - ${metricLabel}`] as number || 0
-    }))
-    
-    const company2Data = chartData.map(d => ({
-      year: d.year,
-      value: d[`${company2} - ${metricLabel}`] as number || 0
-    }))
-    
-    // Insight 1: Average Performance Comparison (both companies)
-    const company1Avg = company1Data.reduce((sum, d) => sum + d.value, 0) / company1Data.length
-    const company2Avg = company2Data.reduce((sum, d) => sum + d.value, 0) / company2Data.length
-    const topPerformer = company1Avg > company2Avg ? company1 : company2
-    
-    newInsights.push({
-      title: '🏆 Average Performance',
-      description: `${company1}: $${company1Avg.toLocaleString('en-US', { maximumFractionDigits: 0 })} | ${company2}: $${company2Avg.toLocaleString('en-US', { maximumFractionDigits: 0 })} (${topPerformer} leads across ${selectedStartYear}-${selectedEndYear}).`
-    })
-    
-    // Insight 2: Change Over Time (both companies)
-    if (company1Data.length > 1 && company2Data.length > 1) {
-      const company1Change = company1Data[company1Data.length - 1].value - company1Data[0].value
-      const company2Change = company2Data[company2Data.length - 1].value - company2Data[0].value
+    // Helper function to calculate company summary
+    const calculateCompanySummary = (companyName: string): CompanySummary => {
+      // Get company info
+      const companyInfo = allCompanies.find(c => c.display_name === companyName)
+      const segment = companyInfo?.segment || 'Unknown'
+
+      // Calculate averages and trends for each metric
+      const revenueData = chartData.map(d => d[`${companyName} - Revenue`] as number || 0).filter(v => v > 0)
+      const profitData = chartData.map(d => d[`${companyName} - Net Profit`] as number || 0)
+      const assetsData = chartData.map(d => d[`${companyName} - Assets`] as number || 0).filter(v => v > 0)
       
-      const company1Direction = company1Change > 0 ? 'improved' : 'declined'
-      const company2Direction = company2Change > 0 ? 'improved' : 'declined'
-      const company1ChangeAbs = Math.abs(company1Change)
-      const company2ChangeAbs = Math.abs(company2Change)
-      const biggestChanger = company1ChangeAbs > company2ChangeAbs ? company1 : company2
+      const avgRevenue = revenueData.length > 0 ? revenueData.reduce((a, b) => a + b, 0) / revenueData.length : 0
+      const avgProfit = profitData.length > 0 ? profitData.reduce((a, b) => a + b, 0) / profitData.length : 0
       
-      newInsights.push({
-        title: '📈 Change Over Time',
-        description: `${company1} ${company1Direction} by $${company1ChangeAbs.toLocaleString('en-US', { maximumFractionDigits: 0 })} | ${company2} ${company2Direction} by $${company2ChangeAbs.toLocaleString('en-US', { maximumFractionDigits: 0 })} (${biggestChanger} changed most from ${selectedStartYear} to ${selectedEndYear}).`
-      })
+      // Calculate revenue growth
+      const revenueGrowth = revenueData.length > 1 
+        ? ((revenueData[revenueData.length - 1] - revenueData[0]) / revenueData[0]) * 100 
+        : 0
+      
+      // Determine profit trend
+      let profitTrend = 'stable'
+      if (profitData.length > 1) {
+        const firstHalf = profitData.slice(0, Math.floor(profitData.length / 2))
+        const secondHalf = profitData.slice(Math.floor(profitData.length / 2))
+        const avgFirstHalf = firstHalf.reduce((a, b) => a + b, 0) / firstHalf.length
+        const avgSecondHalf = secondHalf.reduce((a, b) => a + b, 0) / secondHalf.length
+        
+        if (avgSecondHalf > avgFirstHalf * 1.05) profitTrend = 'improving'
+        else if (avgSecondHalf < avgFirstHalf * 0.95) profitTrend = 'declining'
+      }
+      
+      // Find top metric (highest average value)
+      const metrics = [
+        { name: 'Revenue', value: avgRevenue },
+        { name: 'Assets', value: assetsData.length > 0 ? assetsData.reduce((a, b) => a + b, 0) / assetsData.length : 0 }
+      ]
+      const topMetric = metrics.reduce((a, b) => a.value > b.value ? a : b).name
+      
+      // Performance note
+      let performanceNote = ''
+      if (revenueGrowth > 20) {
+        performanceNote = 'Strong growth trajectory with expanding market presence.'
+      } else if (revenueGrowth > 5) {
+        performanceNote = 'Steady growth with consistent performance.'
+      } else if (revenueGrowth > -5) {
+        performanceNote = 'Stable performance with minor fluctuations.'
+      } else {
+        performanceNote = 'Facing challenges with declining revenues.'
+      }
+
+      return {
+        companyName,
+        segment,
+        avgRevenue,
+        avgProfit,
+        revenueGrowth,
+        profitTrend,
+        topMetric,
+        performanceNote
+      }
     }
+
+    const summary1 = calculateCompanySummary(company1)
+    const summary2 = calculateCompanySummary(company2)
+
+    // Generate comparison text
+    let comparison = ''
     
-    // Insight 3: Volatility (both companies)
-    const company1Volatility = Math.max(...company1Data.map(d => d.value)) - Math.min(...company1Data.map(d => d.value))
-    const company2Volatility = Math.max(...company2Data.map(d => d.value)) - Math.min(...company2Data.map(d => d.value))
-    
-    const mostVolatile = company1Volatility > company2Volatility ? company1 : company2
-    
-    newInsights.push({
-      title: '⚡ Variability Range',
-      description: `${company1}: $${company1Volatility.toLocaleString('en-US', { maximumFractionDigits: 0 })} | ${company2}: $${company2Volatility.toLocaleString('en-US', { maximumFractionDigits: 0 })} (${mostVolatile} shows highest fluctuation).`
-    })
-    
-    setInsights(newInsights)
+    if (summary1.avgRevenue > summary2.avgRevenue * 1.2) {
+      comparison = `${company1} significantly outperforms ${company2} in revenue generation, averaging ${((summary1.avgRevenue / summary2.avgRevenue - 1) * 100).toFixed(0)}% more. `
+    } else if (summary2.avgRevenue > summary1.avgRevenue * 1.2) {
+      comparison = `${company2} significantly outperforms ${company1} in revenue generation, averaging ${((summary2.avgRevenue / summary1.avgRevenue - 1) * 100).toFixed(0)}% more. `
+    } else {
+      comparison = `Both companies show comparable revenue levels, with ${summary1.avgRevenue > summary2.avgRevenue ? company1 : company2} holding a slight edge. `
+    }
+
+    if (summary1.revenueGrowth > summary2.revenueGrowth + 10) {
+      comparison += `${company1} demonstrates stronger growth momentum with ${summary1.revenueGrowth.toFixed(1)}% growth versus ${company2}'s ${summary2.revenueGrowth.toFixed(1)}%. `
+    } else if (summary2.revenueGrowth > summary1.revenueGrowth + 10) {
+      comparison += `${company2} demonstrates stronger growth momentum with ${summary2.revenueGrowth.toFixed(1)}% growth versus ${company1}'s ${summary1.revenueGrowth.toFixed(1)}%. `
+    } else {
+      comparison += `Both companies show similar growth trajectories over the selected period. `
+    }
+
+    if (summary1.profitTrend === 'improving' && summary2.profitTrend !== 'improving') {
+      comparison += `${company1} shows improving profitability trends, which may indicate better operational efficiency.`
+    } else if (summary2.profitTrend === 'improving' && summary1.profitTrend !== 'improving') {
+      comparison += `${company2} shows improving profitability trends, which may indicate better operational efficiency.`
+    } else {
+      comparison += `Both companies maintain ${summary1.profitTrend} profitability patterns.`
+    }
+
+    setSummary({ company1: summary1, company2: summary2, comparison })
   }
 
   // Export functions
@@ -410,7 +453,7 @@ function App() {
             <div className="w-1 h-8 bg-gradient-to-b from-blue-400 to-blue-600 rounded"></div>
             <h2 className="text-2xl font-bold text-slate-900">Filtering Options</h2>
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6">
             <div>
               <label htmlFor="segment-select" className="block text-sm font-semibold text-slate-700 mb-3">📂 Retail Category</label>
               <select
@@ -475,6 +518,24 @@ function App() {
                 ))}
               </select>
             </div>
+
+            <div>
+              <label htmlFor="chart-type-select" className="block text-sm font-semibold text-slate-700 mb-3">📈 Chart Type</label>
+              <select
+                id="chart-type-select"
+                value={chartType}
+                onChange={e => setChartType(e.target.value as any)}
+                className="w-full bg-white border border-slate-300 rounded-xl px-4 py-3 text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+              >
+                <option value="line-smooth">📈 Smooth Line - See trends flow naturally</option>
+                <option value="line-straight">📉 Straight Line - Connect points directly</option>
+                <option value="bar">📊 Bar Chart - Compare values side-by-side</option>
+                <option value="area">🗻 Area Chart - Show volume over time</option>
+                <option value="composed">🎯 Combined - Bars + trend line together</option>
+                <option value="scatter">🔵 Scatter Plot - See data point distribution</option>
+                <option value="radar">🕸️ Radar - Compare across all metrics</option>
+              </select>
+            </div>
           </div>
         </div>
 
@@ -525,11 +586,11 @@ function App() {
               {loading ? '⏳ Loading...' : '▶️ Compare Companies'}
             </button>
             <button
-              onClick={generateInsights}
+              onClick={generateSummary}
               disabled={chartData.length === 0}
               className="bg-gradient-to-r from-emerald-600 to-emerald-700 hover:from-emerald-700 hover:to-emerald-800 disabled:from-slate-400 disabled:to-slate-500 text-white font-bold py-3 px-6 rounded-xl transition-all duration-200 transform hover:scale-105 disabled:scale-100 shadow-lg"
             >
-              ✨ Generate Insights
+              📝 Generate Summary
             </button>
           </div>
 
@@ -555,62 +616,477 @@ function App() {
                 <div className="w-1 h-10 bg-gradient-to-b from-cyan-400 to-cyan-600 rounded"></div>
                 <h2 className="text-3xl font-bold text-slate-900">Performance Trends</h2>
               </div>
-              <div ref={chartsContainerRef} className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                {displayedMetrics.map(metric => (
-                  <div key={metric.key} className="group bg-white rounded-2xl border border-slate-200 p-8 shadow-lg hover:shadow-xl transition-all duration-300 transform hover:-translate-y-1">
-                    <h3 className="text-xl font-bold text-slate-900 mb-6 flex items-center gap-2">
-                      <span className="text-2xl">📈</span>
-                      {metric.label}
+
+              {/* Radar Chart - Special view showing all metrics at once */}
+              {chartType === 'radar' && (
+                <div className="mb-8">
+                  <div className="bg-white rounded-2xl border border-slate-200 p-8 shadow-lg">
+                    <h3 className="text-2xl font-bold text-slate-900 mb-4 flex items-center gap-2">
+                      <span className="text-3xl">🕸️</span>
+                      Multi-Metric Comparison (Latest Year: {chartData[chartData.length - 1]?.year})
                     </h3>
-                    <div className="bg-slate-50 rounded-xl p-4">
-                      <ResponsiveContainer width="100%" height={400}>
-                        <LineChart data={chartData} margin={{ top: 5, right: 30, left: 100, bottom: 5 }}>
-                          <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,0.1)" />
-                          <XAxis dataKey="year" stroke="rgba(0,0,0,0.6)" label={{ value: 'Year', position: 'insideBottomRight', offset: -5, fill: 'rgba(0,0,0,0.8)' }} />
-                          <YAxis stroke="rgba(0,0,0,0.6)" label={{ value: 'USD (thousands)', angle: -90, position: 'left', offset: 10, fill: 'rgba(0,0,0,0.8)' }} />
+                    <p className="text-slate-600 mb-6">
+                      This spider web chart compares both companies across all metrics at once. Each point on the web represents a different financial metric. The larger the shape, the better the overall performance.
+                    </p>
+                    <div className="bg-slate-50 rounded-xl p-6">
+                      <ResponsiveContainer width="100%" height={500}>
+                        <RadarChart data={(() => {
+                          const latestData = chartData[chartData.length - 1]
+                          return displayedMetrics.map(metric => ({
+                            metric: metric.label,
+                            [company1]: latestData[`${company1} - ${metric.label}`] || 0,
+                            [company2]: latestData[`${company2} - ${metric.label}`] || 0,
+                          }))
+                        })()}>
+                          <PolarGrid stroke="rgba(0,0,0,0.2)" strokeWidth={1} />
+                          <PolarAngleAxis 
+                            dataKey="metric" 
+                            tick={{ fill: 'rgba(0,0,0,0.8)', fontSize: 13, fontWeight: 600 }}
+                          />
+                          <PolarRadiusAxis 
+                            angle={90} 
+                            domain={[0, 'auto']}
+                            tick={{ fill: 'rgba(0,0,0,0.6)' }}
+                          />
+                          <Radar
+                            name={company1}
+                            dataKey={company1}
+                            stroke="#1f77b4"
+                            fill="#1f77b4"
+                            fillOpacity={0.25}
+                            strokeWidth={3}
+                          />
+                          <Radar
+                            name={company2}
+                            dataKey={company2}
+                            stroke="#ff7f0e"
+                            fill="#ff7f0e"
+                            fillOpacity={0.25}
+                            strokeWidth={3}
+                          />
                           <Tooltip 
                             formatter={(value: any) => value ? `$${value.toLocaleString()}` : '$0'}
-                            contentStyle={{ backgroundColor: '#fff', border: '1px solid #ccc', borderRadius: '12px', color: '#000' }}
+                            contentStyle={{ backgroundColor: '#fff', border: '2px solid #ccc', borderRadius: '12px', color: '#000', padding: '12px' }}
                           />
-                          <Legend wrapperStyle={{ paddingTop: '20px', color: 'rgba(0,0,0,0.8)' }} />
-                          <Line
-                            type="monotone"
-                            dataKey={`${company1} - ${metric.label}`}
-                            stroke={colors[`${company1} - ${metric.label}`] || '#000'}
-                            strokeWidth={3}
-                            dot={false}
-                            isAnimationActive={false}
+                          <Legend 
+                            wrapperStyle={{ paddingTop: '20px' }}
+                            iconType="circle"
                           />
-                          <Line
-                            type="monotone"
-                            dataKey={`${company2} - ${metric.label}`}
-                            stroke={colors[`${company2} - ${metric.label}`] || '#000'}
-                            strokeWidth={3}
-                            dot={false}
-                            isAnimationActive={false}
-                          />
-                        </LineChart>
+                        </RadarChart>
                       </ResponsiveContainer>
                     </div>
                   </div>
-                ))}
-              </div>
-            </div>
-
-            {insights.length > 0 && (
-              <div>
-                <div className="flex items-center gap-3 mb-8">
-                  <div className="w-1 h-10 bg-gradient-to-b from-pink-400 to-pink-600 rounded"></div>
-                  <h2 className="text-3xl font-bold text-slate-900">Key Insights</h2>
                 </div>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-                  {insights.map((insight, index) => (
-                    <div key={index} className="group bg-white rounded-2xl border border-slate-200 p-8 shadow-lg hover:shadow-xl transition-all duration-300 transform hover:-translate-y-1 relative overflow-hidden">
-                      <div className="absolute top-0 left-0 w-1 h-full bg-gradient-to-b from-pink-400 to-pink-600 opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
-                      <h3 className="text-lg font-bold text-slate-900 mb-4 pl-4">{insight.title}</h3>
-                      <p className="text-slate-700 leading-relaxed pl-4">{insight.description}</p>
+              )}
+
+              {/* Regular charts grid */}
+              {chartType !== 'radar' && (
+                <div ref={chartsContainerRef} className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                  {displayedMetrics.map(metric => (
+                    <div key={metric.key} className="group bg-white rounded-2xl border border-slate-200 p-8 shadow-lg hover:shadow-xl transition-all duration-300 transform hover:-translate-y-1">
+                      <h3 className="text-xl font-bold text-slate-900 mb-6 flex items-center gap-3">
+                        <span className="text-2xl">📊</span>
+                        {metric.label}
+                      </h3>
+                      <div className="bg-gradient-to-br from-slate-50 to-slate-100 rounded-xl p-6 shadow-inner">
+                        <ResponsiveContainer width="100%" height={420}>
+                          {chartType === 'bar' ? (
+                            <BarChart data={chartData} margin={{ top: 20, right: 40, left: 120, bottom: 20 }}>
+                              <CartesianGrid strokeDasharray="5 5" stroke="rgba(0,0,0,0.08)" />
+                              <XAxis 
+                                dataKey="year" 
+                                stroke="rgba(0,0,0,0.7)" 
+                                tick={{ fontSize: 13, fontWeight: 500 }}
+                                label={{ value: 'Year', position: 'insideBottomRight', offset: -10, fill: 'rgba(0,0,0,0.8)', fontWeight: 600 }} 
+                              />
+                              <YAxis 
+                                stroke="rgba(0,0,0,0.7)" 
+                                tick={{ fontSize: 12 }}
+                                label={{ value: 'USD (thousands)', angle: -90, position: 'left', offset: 20, fill: 'rgba(0,0,0,0.8)', fontWeight: 600 }} 
+                              />
+                              <Tooltip 
+                                formatter={(value: any) => value ? `$${value.toLocaleString()}` : '$0'}
+                                contentStyle={{ backgroundColor: '#fff', border: '2px solid #e2e8f0', borderRadius: '12px', color: '#000', padding: '12px', boxShadow: '0 4px 6px rgba(0,0,0,0.1)' }}
+                                labelStyle={{ fontWeight: 'bold', marginBottom: '8px' }}
+                              />
+                              <Legend 
+                                wrapperStyle={{ paddingTop: '25px' }}
+                                iconType="rect"
+                              />
+                              <Bar
+                                dataKey={`${company1} - ${metric.label}`}
+                                fill={colors[`${company1} - ${metric.label}`] || '#1f77b4'}
+                                radius={[8, 8, 0, 0]}
+                                isAnimationActive={false}
+                              />
+                              <Bar
+                                dataKey={`${company2} - ${metric.label}`}
+                                fill={colors[`${company2} - ${metric.label}`] || '#ff7f0e'}
+                                radius={[8, 8, 0, 0]}
+                                isAnimationActive={false}
+                              />
+                            </BarChart>
+                          ) : chartType === 'area' ? (
+                            <AreaChart data={chartData} margin={{ top: 20, right: 40, left: 120, bottom: 20 }}>
+                              <defs>
+                                <linearGradient id={`gradient-${company1}-${metric.key}`} x1="0" y1="0" x2="0" y2="1">
+                                  <stop offset="5%" stopColor={colors[`${company1} - ${metric.label}`] || '#1f77b4'} stopOpacity={0.8}/>
+                                  <stop offset="95%" stopColor={colors[`${company1} - ${metric.label}`] || '#1f77b4'} stopOpacity={0.1}/>
+                                </linearGradient>
+                                <linearGradient id={`gradient-${company2}-${metric.key}`} x1="0" y1="0" x2="0" y2="1">
+                                  <stop offset="5%" stopColor={colors[`${company2} - ${metric.label}`] || '#ff7f0e'} stopOpacity={0.8}/>
+                                  <stop offset="95%" stopColor={colors[`${company2} - ${metric.label}`] || '#ff7f0e'} stopOpacity={0.1}/>
+                                </linearGradient>
+                              </defs>
+                              <CartesianGrid strokeDasharray="5 5" stroke="rgba(0,0,0,0.08)" />
+                              <XAxis 
+                                dataKey="year" 
+                                stroke="rgba(0,0,0,0.7)" 
+                                tick={{ fontSize: 13, fontWeight: 500 }}
+                                label={{ value: 'Year', position: 'insideBottomRight', offset: -10, fill: 'rgba(0,0,0,0.8)', fontWeight: 600 }} 
+                              />
+                              <YAxis 
+                                stroke="rgba(0,0,0,0.7)" 
+                                tick={{ fontSize: 12 }}
+                                label={{ value: 'USD (thousands)', angle: -90, position: 'left', offset: 20, fill: 'rgba(0,0,0,0.8)', fontWeight: 600 }} 
+                              />
+                              <Tooltip 
+                                formatter={(value: any) => value ? `$${value.toLocaleString()}` : '$0'}
+                                contentStyle={{ backgroundColor: '#fff', border: '2px solid #e2e8f0', borderRadius: '12px', color: '#000', padding: '12px', boxShadow: '0 4px 6px rgba(0,0,0,0.1)' }}
+                                labelStyle={{ fontWeight: 'bold', marginBottom: '8px' }}
+                              />
+                              <Legend 
+                                wrapperStyle={{ paddingTop: '25px' }}
+                                iconType="rect"
+                              />
+                              <Area
+                                type="monotone"
+                                dataKey={`${company1} - ${metric.label}`}
+                                stroke={colors[`${company1} - ${metric.label}`] || '#1f77b4'}
+                                fill={`url(#gradient-${company1}-${metric.key})`}
+                                strokeWidth={3}
+                                isAnimationActive={false}
+                              />
+                              <Area
+                                type="monotone"
+                                dataKey={`${company2} - ${metric.label}`}
+                                stroke={colors[`${company2} - ${metric.label}`] || '#ff7f0e'}
+                                fill={`url(#gradient-${company2}-${metric.key})`}
+                                strokeWidth={3}
+                                isAnimationActive={false}
+                              />
+                            </AreaChart>
+                          ) : chartType === 'composed' ? (
+                            <ComposedChart data={chartData} margin={{ top: 20, right: 40, left: 120, bottom: 20 }}>
+                              <CartesianGrid strokeDasharray="5 5" stroke="rgba(0,0,0,0.08)" />
+                              <XAxis 
+                                dataKey="year" 
+                                stroke="rgba(0,0,0,0.7)" 
+                                tick={{ fontSize: 13, fontWeight: 500 }}
+                                label={{ value: 'Year', position: 'insideBottomRight', offset: -10, fill: 'rgba(0,0,0,0.8)', fontWeight: 600 }} 
+                              />
+                              <YAxis 
+                                stroke="rgba(0,0,0,0.7)" 
+                                tick={{ fontSize: 12 }}
+                                label={{ value: 'USD (thousands)', angle: -90, position: 'left', offset: 20, fill: 'rgba(0,0,0,0.8)', fontWeight: 600 }} 
+                              />
+                              <Tooltip 
+                                formatter={(value: any) => value ? `$${value.toLocaleString()}` : '$0'}
+                                contentStyle={{ backgroundColor: '#fff', border: '2px solid #e2e8f0', borderRadius: '12px', color: '#000', padding: '12px', boxShadow: '0 4px 6px rgba(0,0,0,0.1)' }}
+                                labelStyle={{ fontWeight: 'bold', marginBottom: '8px' }}
+                              />
+                              <Legend 
+                                wrapperStyle={{ paddingTop: '25px' }}
+                                iconType="rect"
+                              />
+                              <Bar
+                                dataKey={`${company1} - ${metric.label}`}
+                                fill={colors[`${company1} - ${metric.label}`] || '#1f77b4'}
+                                radius={[8, 8, 0, 0]}
+                                isAnimationActive={false}
+                              />
+                              <Bar
+                                dataKey={`${company2} - ${metric.label}`}
+                                fill={colors[`${company2} - ${metric.label}`] || '#ff7f0e'}
+                                radius={[8, 8, 0, 0]}
+                                isAnimationActive={false}
+                              />
+                              <Line
+                                type="monotone"
+                                dataKey={`${company1} - ${metric.label}`}
+                                stroke={colors[`${company1} - ${metric.label}`] || '#1f77b4'}
+                                strokeWidth={3}
+                                dot={{ fill: colors[`${company1} - ${metric.label}`] || '#1f77b4', r: 5 }}
+                                isAnimationActive={false}
+                              />
+                              <Line
+                                type="monotone"
+                                dataKey={`${company2} - ${metric.label}`}
+                                stroke={colors[`${company2} - ${metric.label}`] || '#ff7f0e'}
+                                strokeWidth={3}
+                                dot={{ fill: colors[`${company2} - ${metric.label}`] || '#ff7f0e', r: 5 }}
+                                isAnimationActive={false}
+                              />
+                            </ComposedChart>
+                          ) : chartType === 'scatter' ? (
+                            <ScatterChart margin={{ top: 20, right: 40, left: 120, bottom: 20 }}>
+                              <CartesianGrid strokeDasharray="5 5" stroke="rgba(0,0,0,0.08)" />
+                              <XAxis 
+                                type="number"
+                                dataKey="year" 
+                                name="Year"
+                                stroke="rgba(0,0,0,0.7)" 
+                                tick={{ fontSize: 13, fontWeight: 500 }}
+                                label={{ value: 'Year', position: 'insideBottomRight', offset: -10, fill: 'rgba(0,0,0,0.8)', fontWeight: 600 }}
+                                domain={['dataMin', 'dataMax']}
+                              />
+                              <YAxis 
+                                type="number"
+                                stroke="rgba(0,0,0,0.7)" 
+                                tick={{ fontSize: 12 }}
+                                label={{ value: 'USD (thousands)', angle: -90, position: 'left', offset: 20, fill: 'rgba(0,0,0,0.8)', fontWeight: 600 }} 
+                                domain={['auto', 'auto']}
+                              />
+                              <ZAxis range={[100, 400]} />
+                              <Tooltip 
+                                formatter={(value: any) => value ? `$${value.toLocaleString()}` : '$0'}
+                                contentStyle={{ backgroundColor: '#fff', border: '2px solid #e2e8f0', borderRadius: '12px', color: '#000', padding: '12px', boxShadow: '0 4px 6px rgba(0,0,0,0.1)' }}
+                                labelStyle={{ fontWeight: 'bold', marginBottom: '8px' }}
+                                cursor={{ strokeDasharray: '3 3' }}
+                              />
+                              <Legend 
+                                wrapperStyle={{ paddingTop: '25px' }}
+                                iconType="circle"
+                              />
+                              <Scatter
+                                name={company1}
+                                data={chartData.map(d => ({ year: d.year, value: d[`${company1} - ${metric.label}`] }))}
+                                dataKey="value"
+                                fill={colors[`${company1} - ${metric.label}`] || '#1f77b4'}
+                                isAnimationActive={false}
+                              />
+                              <Scatter
+                                name={company2}
+                                data={chartData.map(d => ({ year: d.year, value: d[`${company2} - ${metric.label}`] }))}
+                                dataKey="value"
+                                fill={colors[`${company2} - ${metric.label}`] || '#ff7f0e'}
+                                isAnimationActive={false}
+                              />
+                            </ScatterChart>
+                          ) : (
+                            <LineChart data={chartData} margin={{ top: 20, right: 40, left: 120, bottom: 20 }}>
+                              <CartesianGrid strokeDasharray="5 5" stroke="rgba(0,0,0,0.08)" />
+                              <XAxis 
+                                dataKey="year" 
+                                stroke="rgba(0,0,0,0.7)" 
+                                tick={{ fontSize: 13, fontWeight: 500 }}
+                                label={{ value: 'Year', position: 'insideBottomRight', offset: -10, fill: 'rgba(0,0,0,0.8)', fontWeight: 600 }} 
+                              />
+                              <YAxis 
+                                stroke="rgba(0,0,0,0.7)" 
+                                tick={{ fontSize: 12 }}
+                                label={{ value: 'USD (thousands)', angle: -90, position: 'left', offset: 20, fill: 'rgba(0,0,0,0.8)', fontWeight: 600 }} 
+                              />
+                              <Tooltip 
+                                formatter={(value: any) => value ? `$${value.toLocaleString()}` : '$0'}
+                                contentStyle={{ backgroundColor: '#fff', border: '2px solid #e2e8f0', borderRadius: '12px', color: '#000', padding: '12px', boxShadow: '0 4px 6px rgba(0,0,0,0.1)' }}
+                                labelStyle={{ fontWeight: 'bold', marginBottom: '8px' }}
+                              />
+                              <Legend 
+                                wrapperStyle={{ paddingTop: '25px' }}
+                                iconType="line"
+                              />
+                              <Line
+                                type={chartType === 'line-smooth' ? 'monotone' : 'linear'}
+                                dataKey={`${company1} - ${metric.label}`}
+                                stroke={colors[`${company1} - ${metric.label}`] || '#1f77b4'}
+                                strokeWidth={4}
+                                dot={{ fill: colors[`${company1} - ${metric.label}`] || '#1f77b4', r: 6, strokeWidth: 2, stroke: '#fff' }}
+                                activeDot={{ r: 8, strokeWidth: 2 }}
+                                isAnimationActive={false}
+                              />
+                              <Line
+                                type={chartType === 'line-smooth' ? 'monotone' : 'linear'}
+                                dataKey={`${company2} - ${metric.label}`}
+                                stroke={colors[`${company2} - ${metric.label}`] || '#ff7f0e'}
+                                strokeWidth={4}
+                                dot={{ fill: colors[`${company2} - ${metric.label}`] || '#ff7f0e', r: 6, strokeWidth: 2, stroke: '#fff' }}
+                                activeDot={{ r: 8, strokeWidth: 2 }}
+                                isAnimationActive={false}
+                              />
+                            </LineChart>
+                          )}
+                        </ResponsiveContainer>
+                      </div>
                     </div>
                   ))}
+                </div>
+              )}
+            </div>
+
+            {summary.company1 && summary.company2 && (
+              <div className="mt-12">
+                <div className="flex items-center gap-3 mb-8">
+                  <div className="w-1 h-10 bg-gradient-to-b from-purple-400 to-purple-600 rounded"></div>
+                  <h2 className="text-3xl font-bold text-slate-900">Company Summaries</h2>
+                </div>
+
+                {/* Comparison Overview */}
+                <div className="mb-10 bg-gradient-to-br from-blue-50 to-indigo-50 rounded-2xl border-2 border-blue-200 p-8 shadow-lg">
+                  <div className="flex items-center gap-3 mb-4">
+                    <span className="text-4xl">🔍</span>
+                    <h3 className="text-2xl font-bold text-slate-900">Comparison Overview</h3>
+                  </div>
+                  <p className="text-lg text-slate-700 leading-relaxed">
+                    {summary.comparison}
+                  </p>
+                </div>
+
+                {/* Company Cards Side by Side */}
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                  {/* Company 1 Summary */}
+                  <div className="bg-white rounded-2xl border-2 border-slate-200 p-8 shadow-lg hover:shadow-xl transition-all duration-300">
+                    <div className="flex items-center gap-3 mb-6 pb-4 border-b-2 border-slate-200">
+                      <span className="text-4xl">🏢</span>
+                      <div>
+                        <h3 className="text-2xl font-bold text-slate-900">{summary.company1.companyName}</h3>
+                        <p className="text-sm text-slate-600 font-semibold mt-1">
+                          {summary.company1.segment}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="space-y-5">
+                      <div className="bg-gradient-to-r from-blue-50 to-blue-100 rounded-xl p-5">
+                        <div className="flex items-center gap-2 mb-2">
+                          <span className="text-2xl">💰</span>
+                          <h4 className="text-sm font-bold text-slate-700 uppercase tracking-wide">Average Revenue</h4>
+                        </div>
+                        <p className="text-3xl font-bold text-blue-900">
+                          ${(summary.company1.avgRevenue / 1000).toLocaleString('en-US', { maximumFractionDigits: 1 })} million
+                        </p>
+                        <p className="text-sm text-slate-600 mt-1">USD per year</p>
+                      </div>
+
+                      <div className="bg-gradient-to-r from-green-50 to-green-100 rounded-xl p-5">
+                        <div className="flex items-center gap-2 mb-2">
+                          <span className="text-2xl">📈</span>
+                          <h4 className="text-sm font-bold text-slate-700 uppercase tracking-wide">Revenue Growth</h4>
+                        </div>
+                        <p className={`text-3xl font-bold ${summary.company1.revenueGrowth >= 0 ? 'text-green-900' : 'text-red-900'}`}>
+                          {summary.company1.revenueGrowth >= 0 ? '+' : ''}{summary.company1.revenueGrowth.toFixed(1)}%
+                        </p>
+                        <p className="text-sm text-slate-600 mt-1">From {selectedStartYear} to {selectedEndYear}</p>
+                      </div>
+
+                      <div className="bg-gradient-to-r from-amber-50 to-amber-100 rounded-xl p-5">
+                        <div className="flex items-center gap-2 mb-2">
+                          <span className="text-2xl">💵</span>
+                          <h4 className="text-sm font-bold text-slate-700 uppercase tracking-wide">Average Net Profit</h4>
+                        </div>
+                        <p className="text-3xl font-bold text-amber-900">
+                          {summary.company1.avgProfit >= 0 ? '+' : ''}{summary.company1.avgProfit.toFixed(1)}%
+                        </p>
+                        <p className="text-sm text-slate-600 mt-1">Profit margin percentage</p>
+                      </div>
+
+                      <div className="bg-gradient-to-r from-purple-50 to-purple-100 rounded-xl p-5">
+                        <div className="flex items-center gap-2 mb-2">
+                          <span className="text-2xl">📊</span>
+                          <h4 className="text-sm font-bold text-slate-700 uppercase tracking-wide">Profit Trend</h4>
+                        </div>
+                        <p className="text-2xl font-bold text-purple-900 capitalize">
+                          {summary.company1.profitTrend === 'improving' && '📈 '}
+                          {summary.company1.profitTrend === 'declining' && '📉 '}
+                          {summary.company1.profitTrend === 'stable' && '➡️ '}
+                          {summary.company1.profitTrend}
+                        </p>
+                        <p className="text-sm text-slate-600 mt-1">Recent profitability pattern</p>
+                      </div>
+
+                      <div className="bg-gradient-to-r from-slate-50 to-slate-100 rounded-xl p-5 border-2 border-slate-200">
+                        <div className="flex items-center gap-2 mb-2">
+                          <span className="text-2xl">💡</span>
+                          <h4 className="text-sm font-bold text-slate-700 uppercase tracking-wide">Performance Note</h4>
+                        </div>
+                        <p className="text-base text-slate-700 leading-relaxed">
+                          {summary.company1.performanceNote}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Company 2 Summary */}
+                  <div className="bg-white rounded-2xl border-2 border-slate-200 p-8 shadow-lg hover:shadow-xl transition-all duration-300">
+                    <div className="flex items-center gap-3 mb-6 pb-4 border-b-2 border-slate-200">
+                      <span className="text-4xl">🏢</span>
+                      <div>
+                        <h3 className="text-2xl font-bold text-slate-900">{summary.company2.companyName}</h3>
+                        <p className="text-sm text-slate-600 font-semibold mt-1">
+                          {summary.company2.segment}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="space-y-5">
+                      <div className="bg-gradient-to-r from-orange-50 to-orange-100 rounded-xl p-5">
+                        <div className="flex items-center gap-2 mb-2">
+                          <span className="text-2xl">💰</span>
+                          <h4 className="text-sm font-bold text-slate-700 uppercase tracking-wide">Average Revenue</h4>
+                        </div>
+                        <p className="text-3xl font-bold text-orange-900">
+                          ${(summary.company2.avgRevenue / 1000).toLocaleString('en-US', { maximumFractionDigits: 1 })} million
+                        </p>
+                        <p className="text-sm text-slate-600 mt-1">USD per year</p>
+                      </div>
+
+                      <div className="bg-gradient-to-r from-emerald-50 to-emerald-100 rounded-xl p-5">
+                        <div className="flex items-center gap-2 mb-2">
+                          <span className="text-2xl">📈</span>
+                          <h4 className="text-sm font-bold text-slate-700 uppercase tracking-wide">Revenue Growth</h4>
+                        </div>
+                        <p className={`text-3xl font-bold ${summary.company2.revenueGrowth >= 0 ? 'text-emerald-900' : 'text-red-900'}`}>
+                          {summary.company2.revenueGrowth >= 0 ? '+' : ''}{summary.company2.revenueGrowth.toFixed(1)}%
+                        </p>
+                        <p className="text-sm text-slate-600 mt-1">From {selectedStartYear} to {selectedEndYear}</p>
+                      </div>
+
+                      <div className="bg-gradient-to-r from-yellow-50 to-yellow-100 rounded-xl p-5">
+                        <div className="flex items-center gap-2 mb-2">
+                          <span className="text-2xl">💵</span>
+                          <h4 className="text-sm font-bold text-slate-700 uppercase tracking-wide">Average Net Profit</h4>
+                        </div>
+                        <p className="text-3xl font-bold text-yellow-900">
+                          {summary.company2.avgProfit >= 0 ? '+' : ''}{summary.company2.avgProfit.toFixed(1)}%
+                        </p>
+                        <p className="text-sm text-slate-600 mt-1">Profit margin percentage</p>
+                      </div>
+
+                      <div className="bg-gradient-to-r from-pink-50 to-pink-100 rounded-xl p-5">
+                        <div className="flex items-center gap-2 mb-2">
+                          <span className="text-2xl">📊</span>
+                          <h4 className="text-sm font-bold text-slate-700 uppercase tracking-wide">Profit Trend</h4>
+                        </div>
+                        <p className="text-2xl font-bold text-pink-900 capitalize">
+                          {summary.company2.profitTrend === 'improving' && '📈 '}
+                          {summary.company2.profitTrend === 'declining' && '📉 '}
+                          {summary.company2.profitTrend === 'stable' && '➡️ '}
+                          {summary.company2.profitTrend}
+                        </p>
+                        <p className="text-sm text-slate-600 mt-1">Recent profitability pattern</p>
+                      </div>
+
+                      <div className="bg-gradient-to-r from-slate-50 to-slate-100 rounded-xl p-5 border-2 border-slate-200">
+                        <div className="flex items-center gap-2 mb-2">
+                          <span className="text-2xl">💡</span>
+                          <h4 className="text-sm font-bold text-slate-700 uppercase tracking-wide">Performance Note</h4>
+                        </div>
+                        <p className="text-base text-slate-700 leading-relaxed">
+                          {summary.company2.performanceNote}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
                 </div>
               </div>
             )}
