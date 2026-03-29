@@ -11,11 +11,39 @@ interface CompanyInfo {
   display_name: string
   segment: string
   subsegment: string
+  currency: string
+}
+
+const getCurrencySymbol = (currencyCode: string): string => {
+  const symbols: { [key: string]: string } = {
+    'USD': '$',
+    'GBP': '£',
+    'EUR': '€',
+    'CAD': 'C$',
+    'AUD': 'A$',
+    'JPY': '¥',
+    'CNY': '¥',
+  }
+  return symbols[currencyCode] || currencyCode
+}
+
+const getCurrencyName = (currencyCode: string): string => {
+  const names: { [key: string]: string } = {
+    'USD': 'US Dollars',
+    'GBP': 'British Pounds',
+    'EUR': 'Euros',
+    'CAD': 'Canadian Dollars',
+    'AUD': 'Australian Dollars',
+    'JPY': 'Japanese Yen',
+    'CNY': 'Chinese Yuan',
+  }
+  return names[currencyCode] || currencyCode
 }
 
 interface CompanySummary {
   companyName: string
   segment: string
+  currency: string
   avgRevenue: number
   avgProfit: number
   revenueGrowth: number
@@ -108,7 +136,7 @@ function App() {
   }, [])
 
   const fetchCompanyList = () => {
-    const query = `SELECT company, display_name, segment, subsegment FROM company_info WHERE segment IS NOT NULL ORDER BY display_name`
+    const query = `SELECT company, display_name, segment, subsegment, currency FROM company_info WHERE segment IS NOT NULL ORDER BY display_name`
     const url = `https://www.dolthub.com/api/v1alpha1/calvinw/BusMgmtBenchmarks?q=${encodeURIComponent(query)}`
 
     fetch(url)
@@ -155,11 +183,12 @@ function App() {
 
         financials.forEach(row => {
           if (!chartDataByYear[row.year]) {
-            chartDataByYear[row.year] = { year: row.year }
+            chartDataByYear[row.year] = { year: Number(row.year) }
           }
           displayedMetrics.forEach(metric => {
             const key = `${row.company_name} - ${metric.label}`
-            chartDataByYear[row.year][key] = row[metric.key] || 0
+            // Convert to number since API returns strings
+            chartDataByYear[row.year][key] = Number(row[metric.key]) || 0
           })
         })
 
@@ -185,6 +214,7 @@ function App() {
       // Get company info
       const companyInfo = allCompanies.find(c => c.display_name === companyName)
       const segment = companyInfo?.segment || 'Unknown'
+      const currency = companyInfo?.currency || 'USD'
 
       // Calculate averages and trends for each metric
       const revenueData = chartData.map(d => d[`${companyName} - Revenue`] as number || 0).filter(v => v > 0)
@@ -192,7 +222,18 @@ function App() {
       const assetsData = chartData.map(d => d[`${companyName} - Assets`] as number || 0).filter(v => v > 0)
       
       const avgRevenue = revenueData.length > 0 ? revenueData.reduce((a, b) => a + b, 0) / revenueData.length : 0
-      const avgProfit = profitData.length > 0 ? profitData.reduce((a, b) => a + b, 0) / profitData.length : 0
+      
+      // Calculate profit margin as a percentage (Net Profit / Revenue * 100)
+      // We pair each year's profit with its revenue to get accurate margins
+      let profitMargins: number[] = []
+      chartData.forEach(d => {
+        const revenue = d[`${companyName} - Revenue`] as number || 0
+        const profit = d[`${companyName} - Net Profit`] as number || 0
+        if (revenue > 0) {
+          profitMargins.push((profit / revenue) * 100)
+        }
+      })
+      const avgProfit = profitMargins.length > 0 ? profitMargins.reduce((a, b) => a + b, 0) / profitMargins.length : 0
       
       // Calculate revenue growth
       const revenueGrowth = revenueData.length > 1 
@@ -233,6 +274,7 @@ function App() {
       return {
         companyName,
         segment,
+        currency,
         avgRevenue,
         avgProfit,
         revenueGrowth,
@@ -963,9 +1005,9 @@ function App() {
                           <h4 className="text-sm font-bold text-slate-700 uppercase tracking-wide">Average Revenue</h4>
                         </div>
                         <p className="text-3xl font-bold text-blue-900">
-                          ${(summary.company1.avgRevenue / 1000).toLocaleString('en-US', { maximumFractionDigits: 1 })} million
+                          {getCurrencySymbol(summary.company1.currency)}{(summary.company1.avgRevenue / 1000).toLocaleString('en-US', { maximumFractionDigits: 1 })} million
                         </p>
-                        <p className="text-sm text-slate-600 mt-1">USD per year</p>
+                        <p className="text-sm text-slate-600 mt-1">{getCurrencyName(summary.company1.currency)} per year</p>
                       </div>
 
                       <div className="bg-gradient-to-r from-green-50 to-green-100 rounded-xl p-5">
@@ -1035,9 +1077,9 @@ function App() {
                           <h4 className="text-sm font-bold text-slate-700 uppercase tracking-wide">Average Revenue</h4>
                         </div>
                         <p className="text-3xl font-bold text-orange-900">
-                          ${(summary.company2.avgRevenue / 1000).toLocaleString('en-US', { maximumFractionDigits: 1 })} million
+                          {getCurrencySymbol(summary.company2.currency)}{(summary.company2.avgRevenue / 1000).toLocaleString('en-US', { maximumFractionDigits: 1 })} million
                         </p>
-                        <p className="text-sm text-slate-600 mt-1">USD per year</p>
+                        <p className="text-sm text-slate-600 mt-1">{getCurrencyName(summary.company2.currency)} per year</p>
                       </div>
 
                       <div className="bg-gradient-to-r from-emerald-50 to-emerald-100 rounded-xl p-5">
